@@ -539,10 +539,12 @@ function App() {
   const [cL,setCL] = React.useState(false);
   const [chatAttachment,setChatAttachment] = React.useState(null);
   const [chatAttachPreview,setChatAttachPreview] = React.useState("");
+  const [showAttachMenu,setShowAttachMenu] = React.useState(false);
   const cEnd = React.useRef(null);
   const chatPhotoRef = React.useRef(null);
   const chatCameraRef = React.useRef(null);
   const chatFileRef = React.useRef(null);
+  const chatAnyFileRef = React.useRef(null);
 
   React.useEffect(()=>{ if(profile) localStorage.setItem("mc_profile",JSON.stringify(profile)); },[profile]);
   React.useEffect(()=>{ localStorage.setItem("mc_log",JSON.stringify(foodLog)); },[foodLog]);
@@ -646,7 +648,11 @@ function App() {
   const sendChat = async () => {
     if ((!cin.trim()&&!chatAttachment)||cL) return;
     if (!key) { setShowKey(true); return; }
-    const userMsg = {r:"u",t:cin||"(adjunto enviado)",att:chatAttachPreview,attType:chatAttachment?chatAttachment.mediaType:null};
+    let attDisplay = chatAttachPreview;
+    if (chatAttachment && !chatAttachment.mediaType.startsWith("image/")) {
+      attDisplay = chatAttachment.fileName || chatAttachPreview;
+    }
+    const userMsg = {r:"u",t:cin||"(adjunto enviado)",att:attDisplay,attType:chatAttachment?chatAttachment.mediaType:null};
     const nc = [...chat,userMsg];
     setChat(nc); setCin(""); setCL(true);
     const currentAtt = chatAttachment;
@@ -678,14 +684,22 @@ function App() {
         const r = await fetch("https://api.anthropic.com/v1/messages",{
           method:"POST",
           headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-          body:JSON.stringify({model:"claude-opus-4-5-20251101",max_tokens:1500,system:sysPrompt,messages:allMsgs})
+          body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1200,system:sysPrompt,messages:allMsgs})
         });
         const d = await r.json();
         if (d.error) throw new Error(d.error.message);
         responseText = d.content[0].text;
       } else {
         const msgs = nc.slice(-10).map(m=>({role:m.r==="u"?"user":"assistant",content:m.t}));
-        responseText = await api(key, sysPrompt, msgs, 800);
+        // Use Sonnet for speed in chat (faster responses)
+        const r = await fetch("https://api.anthropic.com/v1/messages",{
+          method:"POST",
+          headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+          body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:600,system:sysPrompt,messages:msgs})
+        });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error.message);
+        responseText = d.content[0].text;
       }
       setChat(m=>[...m,{r:"a",t:responseText}]);
     } catch(e) {
@@ -697,17 +711,20 @@ function App() {
   const handleChatAttachment = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setShowAttachMenu(false);
     if (file.size > 10*1024*1024) {
       alert("Archivo muy grande. Máximo 10MB.");
       return;
     }
     try {
       const result = await fileToBase64(file);
+      // Store filename for non-images
+      result.fileName = file.name;
       setChatAttachment(result);
       if (result.mediaType.startsWith("image/")) {
         setChatAttachPreview(URL.createObjectURL(file));
       } else {
-        setChatAttachPreview("PDF: "+file.name);
+        setChatAttachPreview(file.name);
       }
     } catch(err) {
       alert("Error cargando archivo");
@@ -1057,9 +1074,9 @@ function App() {
                     <img src={m.att} alt="adjunto" style={{width:"100%",display:"block",maxHeight:240,objectFit:"cover"}}/>
                   </div>
                 )}
-                {m.att && m.attType === "application/pdf" && (
+                {m.att && m.attType && !m.attType.startsWith("image/") && (
                   <div style={{maxWidth:"70%",marginBottom:6,padding:"10px 14px",background:"var(--primary-soft)",border:"1px solid var(--line)",borderRadius:14,display:"flex",alignItems:"center",gap:10}}>
-                    <div style={{fontSize:24}}>📄</div>
+                    <div style={{fontSize:24}}>{m.attType==="application/pdf"?"📄":"📎"}</div>
                     <div style={{fontSize:12,color:"var(--ink)",fontWeight:600}}>{m.att}</div>
                   </div>
                 )}
@@ -1086,25 +1103,57 @@ function App() {
                 ) : (
                   <div style={{width:48,height:48,background:"var(--bg-elev)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>📄</div>
                 )}
-                <div style={{flex:1,minWidth:0,fontSize:13,color:"var(--ink)",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                  {chatAttachment && chatAttachment.mediaType.startsWith("image/") ? "Foto adjunta" : chatAttachPreview}
+                <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
+                  <div style={{fontSize:13,color:"var(--ink)",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {chatAttachment && chatAttachment.mediaType.startsWith("image/") ? "Foto adjunta" : chatAttachPreview}
+                  </div>
+                  <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:500,marginTop:2}}>
+                    Listo para enviar
+                  </div>
                 </div>
                 <button type="button" onClick={clearChatAttachment} style={{background:"var(--bg-elev)",border:"none",borderRadius:"50%",width:28,height:28,color:"var(--ink-soft)",fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,WebkitTapHighlightColor:"transparent"}}>×</button>
               </div>
             )}
             <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
-              <button type="button" onClick={()=>{
-                const choice = prompt("Adjuntar:\n1 = Tomar foto\n2 = Galería de fotos\n3 = Archivo PDF","1");
-                if (choice==="1" && chatCameraRef.current) chatCameraRef.current.click();
-                else if (choice==="2" && chatPhotoRef.current) chatPhotoRef.current.click();
-                else if (choice==="3" && chatFileRef.current) chatFileRef.current.click();
-              }} style={{background:"var(--bg-sunken)",border:"1.5px solid var(--line)",borderRadius:18,padding:"13px 14px",color:"var(--primary)",fontSize:20,cursor:"pointer",WebkitTapHighlightColor:"transparent",touchAction:"manipulation",flexShrink:0}}>📎</button>
+              <button type="button" onClick={()=>setShowAttachMenu(true)} style={{background:"var(--bg-sunken)",border:"1.5px solid var(--line)",borderRadius:18,padding:"13px 14px",color:"var(--primary)",fontSize:20,cursor:"pointer",WebkitTapHighlightColor:"transparent",touchAction:"manipulation",flexShrink:0}}>+</button>
               <input ref={chatCameraRef} type="file" accept="image/*" capture="environment" onChange={handleChatAttachment} style={{display:"none"}}/>
               <input ref={chatPhotoRef} type="file" accept="image/*" onChange={handleChatAttachment} style={{display:"none"}}/>
               <input ref={chatFileRef} type="file" accept="application/pdf" onChange={handleChatAttachment} style={{display:"none"}}/>
+              <input ref={chatAnyFileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt,.csv,.xls,.xlsx" onChange={handleChatAttachment} style={{display:"none"}}/>
               <textarea rows={1} value={cin} onChange={e=>setCin(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat();}}} placeholder={chatAttachment?"Mensaje opcional…":"Pregunta lo que quieras…"} style={{...inp,flex:1,padding:"13px 16px",borderRadius:18}}/>
               <button onClick={sendChat} disabled={(!cin.trim()&&!chatAttachment)||cL} style={{background:(!cin.trim()&&!chatAttachment)||cL?"var(--bg-sunken)":"linear-gradient(135deg,var(--primary),var(--mint))",border:"none",borderRadius:18,padding:"13px 20px",color:(!cin.trim()&&!chatAttachment)||cL?"var(--ink-mute)":"#fff",fontSize:18,cursor:(!cin.trim()&&!chatAttachment)||cL?"not-allowed":"pointer",minWidth:54,boxShadow:(!cin.trim()&&!chatAttachment)||cL?"none":"0 6px 16px -6px rgba(8,145,178,0.4)"}}>↑</button>
             </div>
+
+            {showAttachMenu && (
+              <div className="fadeIn" onClick={()=>setShowAttachMenu(false)} style={{position:"fixed",inset:0,background:"rgba(10,31,28,0.4)",backdropFilter:"blur(8px)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+                <div className="fade" onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:"var(--bg-elev)",borderTopLeftRadius:32,borderTopRightRadius:32,padding:"20px 20px 32px",boxShadow:"0 -10px 40px -10px rgba(0,0,0,0.15)"}}>
+                  <div style={{width:42,height:5,background:"var(--line-strong)",borderRadius:4,margin:"0 auto 20px"}}/>
+                  <div className="serif" style={{fontSize:24,color:"var(--ink)",lineHeight:1,marginBottom:18,textAlign:"center"}}>Adjuntar</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
+                    <button type="button" onClick={()=>{setShowAttachMenu(false);chatCameraRef.current&&chatCameraRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                      <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,var(--primary),var(--primary-deep))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(8,145,178,0.4)"}}>📷</div>
+                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Cámara</div>
+                      <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Tomar foto ahora</div>
+                    </button>
+                    <button type="button" onClick={()=>{setShowAttachMenu(false);chatPhotoRef.current&&chatPhotoRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                      <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,var(--mint),var(--mint-deep))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(16,185,129,0.4)"}}>🖼️</div>
+                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Galería</div>
+                      <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Foto guardada</div>
+                    </button>
+                    <button type="button" onClick={()=>{setShowAttachMenu(false);chatFileRef.current&&chatFileRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                      <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,#ef4444,#dc2626)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(239,68,68,0.4)"}}>📄</div>
+                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>PDF</div>
+                      <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Documento</div>
+                    </button>
+                    <button type="button" onClick={()=>{setShowAttachMenu(false);chatAnyFileRef.current&&chatAnyFileRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                      <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(167,139,250,0.4)"}}>📎</div>
+                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Archivos</div>
+                      <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Cualquier archivo</div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
