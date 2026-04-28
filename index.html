@@ -208,6 +208,44 @@ Formato: lista corta con viñetas. Si no hay nada relevante, responde solo "NADA
 
 const DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 const MEAL_ICONS = {desayuno:"☀",almuerzo:"◐",cena:"☾",snack:"◇"};
+const FOOD_EMOJIS = {
+  // Huevos y lácteos
+  "huevo":"🥚","huevos":"🥚","huevo revuelto":"🍳","huevos revueltos":"🍳","huevo frito":"🍳","omelette":"🍳","tortilla de huevo":"🍳","leche":"🥛","yogurt":"🥛","queso":"🧀","mantequilla":"🧈","crema":"🥛","nata":"🥛",
+  // Carnes
+  "pollo":"🍗","pechuga":"🍗","pechuga de pollo":"🍗","muslo de pollo":"🍗","pierna de pollo":"🍗","carne":"🥩","res":"🥩","bistec":"🥩","carne de res":"🥩","filete":"🥩","milanesa":"🥩","cerdo":"🥓","tocino":"🥓","jamón":"🍖","costilla":"🍖","chorizo":"🌭","salchicha":"🌭","hot dog":"🌭","pepperoni":"🍕","pavo":"🍗","cordero":"🍖","conejo":"🍖",
+  // Mariscos y pescados
+  "camarón":"🦐","camarones":"🦐","langosta":"🦞","cangrejo":"🦀","jaiba":"🦀","pulpo":"🐙","calamar":"🦑","almeja":"🦪","ostión":"🦪","ostiones":"🦪","salmón":"🐟","atún":"🐟","pescado":"🐟","filete de pescado":"🐟","tilapia":"🐟","mojarra":"🐟","robalo":"🐟","sardina":"🐟","anchoa":"🐟","trucha":"🐟","bagre":"🐟",
+  // Frutas
+  "manzana":"🍎","pera":"🍐","naranja":"🍊","mandarina":"🍊","limón":"🍋","lima":"🍋","plátano":"🍌","banana":"🍌","sandía":"🍉","melón":"🍈","uvas":"🍇","uva":"🍇","fresa":"🍓","fresas":"🍓","mango":"🥭","piña":"🍍","coco":"🥥","cereza":"🍒","durazno":"🍑","melocotón":"🍑","ciruela":"🍑","kiwi":"🥝","tomate":"🍅","jitomate":"🍅","aguacate":"🥑","papaya":"🫐","guayaba":"🍈","granada":"🍎","higo":"🍇","tuna":"🌵","mamey":"🍑","zapote":"🍑","tamarindo":"🌿",
+  // Verduras
+  "brócoli":"🥦","brocoli":"🥦","zanahoria":"🥕","zanahorias":"🥕","espinaca":"🥬","espinacas":"🥬","lechuga":"🥬","pepino":"🥒","calabaza":"🎃","calabacita":"🥒","elote":"🌽","maíz":"🌽","chile":"🌶","chili":"🌶","jalapeño":"🌶","cebolla":"🧅","ajo":"🧄","papa":"🥔","papas":"🥔","camote":"🍠","betabel":"🫀","apio":"🥬","col":"🥬","repollo":"🥬","coliflor":"🥦","ejotes":"🫛","chícharo":"🫛","champiñón":"🍄","hongos":"🍄","nopales":"🌵","nopal":"🌵","chayote":"🥒","jícama":"🥔","rábano":"🔴",
+  // Cereales y carbohidratos
+  "arroz":"🍚","tortilla":"🫓","tortillas":"🫓","pan":"🍞","pan tostado":"🍞","tostada":"🫓","tostadas":"🫓","cereal":"🥣","avena":"🥣","granola":"🥣","pasta":"🍝","espagueti":"🍝","macarrón":"🍝","fideo":"🍝","galleta":"🍪","galletas":"🍪","pan dulce":"🥐","croissant":"🥐","waffle":"🧇","hot cake":"🥞","hotcake":"🥞","tamal":"🫔","tamales":"🫔","quesadilla":"🫔","enchilada":"🫔","taco":"🌮","tacos":"🌮","burrito":"🌯","sopa":"🍜","pozole":"🍲","menudo":"🍲","chilaquiles":"🍳","papa frita":"🍟","papas fritas":"🍟","pizza":"🍕","hamburguesa":"🍔","sandwich":"🥪","torta":"🥪",
+  // Leguminosas
+  "frijoles":"🫘","frijol":"🫘","lentejas":"🫘","garbanzo":"🫘","garbanzos":"🫘","soya":"🫘",
+  // Frutos secos y semillas
+  "almendra":"🌰","almendras":"🌰","nuez":"🌰","nueces":"🌰","cacahuate":"🥜","cacahuates":"🥜","pistache":"🌰","piñón":"🌰","semillas":"🌱","chía":"🌱","linaza":"🌱",
+  // Bebidas
+  "café":"☕","agua":"💧","jugo":"🧃","leche descremada":"🥛","té":"🍵","refresco":"🥤","soda":"🥤","licuado":"🥤","smoothie":"🥤","proteína en polvo":"🥤",
+  // Dulces y postres
+  "chocolate":"🍫","helado":"🍦","pastel":"🎂","pay":"🥧","gelatina":"🍮","flan":"🍮","arroz con leche":"🍮",
+  // Otros
+  "aceite":"🫙","miel":"🍯","mermelada":"🍯","salsa":"🫙","guacamole":"🥑","hummus":"🫘","mayonesa":"🫙","ketchup":"🍅","mostaza":"🫙",
+};
+
+const getFoodEmoji = (name) => {
+  if (!name) return "🍽️";
+  const lower = name.toLowerCase().trim();
+  // Direct match
+  if (FOOD_EMOJIS[lower]) return FOOD_EMOJIS[lower];
+  // Partial match - check if any key is contained in the name
+  const keys = Object.keys(FOOD_EMOJIS);
+  for (const key of keys) {
+    if (lower.includes(key)) return FOOD_EMOJIS[key];
+  }
+  return "🍽️";
+};
+
 
 async function api(k, sys, msgs, max=1200) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -617,7 +655,7 @@ function FoodLogModal({onSave,onClose,apiKey,askKey}) {
   const [error,setError] = React.useState("");
   const [photo,setPhoto] = React.useState(null);
   const [photoPreview,setPhotoPreview] = React.useState("");
-  const [inputMode,setInputMode] = React.useState("photo");
+  const [inputMode,setInputMode] = React.useState("text");
   const cameraRef = React.useRef(null);
   const galleryRef = React.useRef(null);
 
@@ -753,9 +791,12 @@ function FoodLogModal({onSave,onClose,apiKey,askKey}) {
               <div style={{fontSize:11,color:"var(--mint-deep)",letterSpacing:1.5,fontWeight:700,marginBottom:14,textTransform:"uppercase"}}>✓ Análisis {parsed.hasPhoto?"de foto":""}</div>
 
               {parsed.items && parsed.items.map((it,i)=>(
-                <div key={i} style={{padding:"12px 0",borderBottom:i<parsed.items.length-1?"1px solid var(--line)":"none"}}>
-                  <div style={{fontSize:14,color:"var(--ink)",marginBottom:3,fontWeight:600}}>{it.name}</div>
-                  <div style={{fontSize:12,color:"var(--ink-mute)"}}>{it.portion} · <strong style={{color:"var(--primary)"}}>{it.kcal}kcal</strong> · P:{it.protein}g · C:{it.carbs}g · G:{it.fat}g</div>
+                <div key={i} style={{padding:"12px 0",borderBottom:i<parsed.items.length-1?"1px solid var(--line)":"none",display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:40,height:40,borderRadius:12,background:"var(--bg-sunken)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{getFoodEmoji(it.name)}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,color:"var(--ink)",marginBottom:3,fontWeight:600}}>{it.name}</div>
+                    <div style={{fontSize:12,color:"var(--ink-mute)"}}>{it.portion} · <strong style={{color:"var(--primary)"}}>{it.kcal}kcal</strong> · P:{it.protein}g · C:{it.carbs}g · G:{it.fat}g</div>
+                  </div>
                 </div>
               ))}
 
@@ -1222,6 +1263,24 @@ Genera el reporte semanal según las instrucciones.`;
             )}
           </div>
 
+          {/* MINI COACH */}
+          <div style={{...card,padding:0,overflow:"hidden"}}>
+            <div style={{padding:"14px 18px 10px",borderBottom:"1px solid var(--line)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:32,height:32,borderRadius:10,background:"linear-gradient(135deg,var(--primary),var(--mint))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🧠</div>
+                <div style={{fontSize:13,fontWeight:700,color:"var(--ink)"}}>Coach</div>
+              </div>
+              <button onClick={()=>setTab("chat")} style={{fontSize:11,color:"var(--primary)",fontWeight:700,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Ver todo ›</button>
+            </div>
+            <div style={{padding:"12px 18px 14px",display:"flex",gap:10,alignItems:"flex-end"}}>
+              <textarea rows={2} value={cin} onChange={e=>setCin(e.target.value)}
+                onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();setTab("chat");sendChat();}}}
+                placeholder="Pregunta algo rápido…"
+                style={{flex:1,background:"var(--bg-sunken)",border:"1.5px solid var(--line)",borderRadius:12,padding:"10px 12px",color:"var(--ink)",fontSize:14,resize:"none",outline:"none",lineHeight:1.5,fontFamily:"inherit"}}/>
+              <button onClick={()=>{setTab("chat");sendChat();}} disabled={!cin.trim()||cL} style={{background:!cin.trim()||cL?"var(--bg-sunken)":"linear-gradient(135deg,var(--primary),var(--mint))",border:"none",borderRadius:12,padding:"10px 14px",color:!cin.trim()||cL?"var(--ink-mute)":"#fff",fontSize:16,cursor:!cin.trim()||cL?"not-allowed":"pointer",flexShrink:0}}>↑</button>
+            </div>
+          </div>
+
           {/* STREAK */}
           {calcStreak()>0 && (
             <div style={{...card,padding:16,background:"linear-gradient(135deg,#fff7ed,#ffedd5)",border:"1px solid #fed7aa",display:"flex",alignItems:"center",gap:14}}>
@@ -1305,7 +1364,7 @@ Genera el reporte semanal según las instrucciones.`;
             ) : (
               dayEntries.sort((a,b)=>a.timestamp-b.timestamp).map(entry => (
                 <div key={entry.id} className="fade tap-effect" style={{padding:"14px 0",borderBottom:"1px solid var(--line)",display:"flex",gap:14,cursor:"pointer"}}>
-                  <div style={{fontSize:24,flexShrink:0,width:42,height:42,borderRadius:12,background:"var(--bg-sunken)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--primary)"}}>{MEAL_ICONS[entry.meal]||"◇"}</div>
+                  <div style={{fontSize:24,flexShrink:0,width:42,height:42,borderRadius:12,background:"var(--bg-sunken)",display:"flex",alignItems:"center",justifyContent:"center"}}>{entry.items && entry.items.length>0 ? getFoodEmoji(entry.items[0].name) : MEAL_ICONS[entry.meal]||"🍽️"}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                       <div style={{fontSize:11,color:"var(--ink-mute)",letterSpacing:1,fontWeight:700,textTransform:"uppercase"}}>{entry.meal}</div>
