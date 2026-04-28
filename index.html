@@ -268,7 +268,96 @@ function MacroRing({label,current,target,color,unit="g",icon}) {
   );
 }
 
-function WeightStat({current,start,goal}) {
+function WeightChart({history,current,goal,start}) {
+  if (!history || history.length < 2) {
+    return (
+      <div style={{padding:"20px 0",textAlign:"center"}}>
+        <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:600,letterSpacing:0.5,textTransform:"uppercase"}}>Sin historial todavía</div>
+        <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:6,lineHeight:1.5}}>Actualiza tu peso varios días para ver tu progreso</div>
+      </div>
+    );
+  }
+
+  const points = history.slice(-12);
+  const weights = points.map(p=>p.weight);
+  const minW = Math.min(...weights, goal) - 1;
+  const maxW = Math.max(...weights, start||current) + 1;
+  const range = maxW - minW || 1;
+
+  const w = 320, h = 130, pad = 24;
+  const chartW = w - pad*2;
+  const chartH = h - pad*2;
+
+  const xStep = points.length>1 ? chartW/(points.length-1) : 0;
+  const yScale = (val) => pad + chartH - ((val-minW)/range)*chartH;
+
+  const linePath = points.map((p,i)=>(i===0?"M":"L")+(pad+i*xStep)+","+yScale(p.weight)).join(" ");
+  const areaPath = linePath + " L"+(pad+(points.length-1)*xStep)+","+(pad+chartH)+" L"+pad+","+(pad+chartH)+" Z";
+
+  const goalY = yScale(goal);
+
+  const first = points[0].weight;
+  const last = points[points.length-1].weight;
+  const diff = (last-first).toFixed(1);
+  const isLosing = parseFloat(diff) < 0;
+  const isGaining = parseFloat(diff) > 0;
+
+  let projection = "";
+  if (points.length >= 3 && isLosing) {
+    const daysSpan = (new Date(points[points.length-1].date) - new Date(points[0].date))/86400000;
+    if (daysSpan > 0) {
+      const ratePerDay = Math.abs(parseFloat(diff))/daysSpan;
+      const remaining = current - goal;
+      if (ratePerDay > 0 && remaining > 0) {
+        const daysToGoal = Math.round(remaining/ratePerDay);
+        if (daysToGoal < 2000) {
+          projection = daysToGoal < 30 ? "~"+daysToGoal+" días para tu meta" : daysToGoal < 365 ? "~"+Math.round(daysToGoal/30)+" meses para tu meta" : "~"+(daysToGoal/365).toFixed(1)+" años para tu meta";
+        }
+      }
+    }
+  }
+
+  return (
+    <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid var(--line)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>Tu progreso</div>
+        <div style={{fontSize:11,fontWeight:700,color:isLosing?"var(--mint-deep)":isGaining?"var(--warn)":"var(--ink-mute)"}}>
+          {isLosing?"↓ ":isGaining?"↑ ":""}{Math.abs(parseFloat(diff))}kg
+        </div>
+      </div>
+
+      <svg width="100%" viewBox={"0 0 "+w+" "+h} style={{display:"block"}} preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="wArea" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.25"/>
+            <stop offset="100%" stopColor="#06b6d4" stopOpacity="0"/>
+          </linearGradient>
+        </defs>
+
+        <line x1={pad} y1={goalY} x2={w-pad} y2={goalY} stroke="#10b981" strokeWidth="1.5" strokeDasharray="4,4" opacity="0.6"/>
+        <text x={w-pad} y={goalY-5} textAnchor="end" fontSize="10" fill="#0d9488" fontWeight="700">Meta {goal}kg</text>
+
+        <path d={areaPath} fill="url(#wArea)"/>
+        <path d={linePath} fill="none" stroke="#0891b2" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
+
+        {points.map((p,i)=>(
+          <circle key={i} cx={pad+i*xStep} cy={yScale(p.weight)} r="3" fill="#fff" stroke="#0891b2" strokeWidth="2"/>
+        ))}
+
+        <circle cx={pad+(points.length-1)*xStep} cy={yScale(last)} r="5" fill="#0891b2"/>
+        <text x={pad+(points.length-1)*xStep} y={yScale(last)-10} textAnchor={points.length>3?"end":"middle"} fontSize="11" fill="#0a1f1c" fontWeight="700">{last}kg</text>
+      </svg>
+
+      {projection && (
+        <div style={{marginTop:10,padding:"10px 14px",background:"var(--mint-soft)",borderRadius:12,fontSize:12,color:"var(--mint-deep)",fontWeight:700,textAlign:"center"}}>
+          🎯 {projection}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WeightStat({current,start,goal,history}) {
   const total = start - goal;
   const lost = start - current;
   const pct = Math.min(100, Math.max(0, total>0?(lost/total)*100:0));
@@ -293,8 +382,9 @@ function WeightStat({current,start,goal}) {
       <div style={{display:"flex",justifyContent:"space-between",marginTop:8,fontSize:11,color:"var(--ink-mute)",fontWeight:600}}>
         <span>Inicio: {start}kg</span>
         <span style={{color:"var(--primary)"}}>{pct.toFixed(0)}% completado</span>
-        <span>Faltan: {Math.max(0,current-goal)}kg</span>
+        <span>Faltan: {Math.max(0,(current-goal).toFixed(1))}kg</span>
       </div>
+      <WeightChart history={history} current={current} goal={goal} start={start}/>
     </div>
   );
 }
@@ -418,17 +508,53 @@ function FoodLogModal({onSave,onClose,apiKey,askKey}) {
   const [loading,setLoading] = React.useState(false);
   const [parsed,setParsed] = React.useState(null);
   const [error,setError] = React.useState("");
+  const [photo,setPhoto] = React.useState(null);
+  const [photoPreview,setPhotoPreview] = React.useState("");
+  const [inputMode,setInputMode] = React.useState("photo");
+  const cameraRef = React.useRef(null);
+  const galleryRef = React.useRef(null);
+
+  const handlePhoto = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 10*1024*1024) {
+      setError("Foto muy grande (máx 10MB)");
+      return;
+    }
+    try {
+      const result = await fileToBase64(file);
+      setPhoto(result);
+      setPhotoPreview(URL.createObjectURL(file));
+      setError("");
+    } catch(err) {
+      setError("Error cargando foto");
+    }
+  };
+
+  const clearPhoto = () => {
+    setPhoto(null);
+    setPhotoPreview("");
+    if (cameraRef.current) cameraRef.current.value = "";
+    if (galleryRef.current) galleryRef.current.value = "";
+  };
 
   const analyze = async () => {
-    if (!text.trim()) return;
+    if (inputMode==="text" && !text.trim()) return;
+    if (inputMode==="photo" && !photo) return;
     if (!apiKey) { askKey(); return; }
     setLoading(true); setError("");
     try {
-      const resp = await api(apiKey, FOOD_LOG_PROMPT, [{role:"user",content:"Analiza ("+meal+"): "+text}], 1500);
+      let resp;
+      if (inputMode==="photo") {
+        const photoPrompt = "Analiza esta foto de comida. Identifica TODOS los alimentos visibles, estima porciones realistas y calcula valores nutricionales. " + (text.trim() ? "Contexto adicional del usuario: "+text : "");
+        resp = await apiVision(apiKey, FOOD_LOG_PROMPT, photoPrompt+" (Esta es comida de "+meal+")", photo.base64, photo.mediaType, 2000);
+      } else {
+        resp = await api(apiKey, FOOD_LOG_PROMPT, [{role:"user",content:"Analiza ("+meal+"): "+text}], 1500);
+      }
       const json = JSON.parse(resp.replace(/```json|```/g,"").trim());
-      setParsed({...json,meal,originalText:text});
+      setParsed({...json,meal,originalText:inputMode==="photo"?(text.trim()||"Foto del plato"):text,hasPhoto:inputMode==="photo"});
     } catch(e) {
-      setError("No pude analizar. Intenta ser más específico.");
+      setError("No pude analizar. Intenta de nuevo o sé más específico.");
     }
     setLoading(false);
   };
@@ -459,15 +585,57 @@ function FoodLogModal({onSave,onClose,apiKey,askKey}) {
           ))}
         </div>
 
-        <label style={{fontSize:11,color:"var(--ink-mute)",letterSpacing:1.5,textTransform:"uppercase",fontWeight:700,marginBottom:10,display:"block"}}>Qué comiste? Incluye porciones</label>
-        <textarea rows={4} value={text} onChange={e=>setText(e.target.value)}
-          placeholder="Ej: 2 huevos revueltos con jamón, 1 rebanada de pan tostado con mantequilla, 1 café con leche..."
-          style={{width:"100%",background:"var(--bg-elev)",border:"1.5px solid var(--line)",borderRadius:16,padding:"15px 17px",color:"var(--ink)",fontSize:15,resize:"none",outline:"none",lineHeight:1.6,marginBottom:16,fontFamily:"inherit",transition:"all 0.2s"}}/>
-
         {!parsed && (
-          <button onClick={analyze} disabled={!text.trim()||loading} style={{width:"100%",padding:16,background:!text.trim()||loading?"var(--bg-sunken)":"linear-gradient(135deg,var(--mint),var(--primary))",border:"none",borderRadius:16,color:!text.trim()||loading?"var(--ink-mute)":"#fff",fontSize:15,fontWeight:700,cursor:!text.trim()||loading?"not-allowed":"pointer",letterSpacing:0.3,boxShadow:!text.trim()||loading?"none":"0 8px 24px -8px rgba(16,185,129,0.5)"}}>
-            {loading ? "Analizando…" : "Analizar"}
-          </button>
+          <>
+            <div style={{display:"flex",gap:6,marginBottom:16,padding:4,background:"var(--bg-sunken)",borderRadius:12}}>
+              <button type="button" onClick={()=>{setInputMode("photo");}} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",cursor:"pointer",fontSize:13,fontWeight:700,background:inputMode==="photo"?"var(--bg-elev)":"transparent",color:inputMode==="photo"?"var(--ink)":"var(--ink-mute)",transition:"all 0.2s",boxShadow:inputMode==="photo"?"0 2px 6px rgba(0,0,0,0.05)":"none",WebkitTapHighlightColor:"transparent"}}>📷 Foto</button>
+              <button type="button" onClick={()=>{setInputMode("text");clearPhoto();}} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",cursor:"pointer",fontSize:13,fontWeight:700,background:inputMode==="text"?"var(--bg-elev)":"transparent",color:inputMode==="text"?"var(--ink)":"var(--ink-mute)",transition:"all 0.2s",boxShadow:inputMode==="text"?"0 2px 6px rgba(0,0,0,0.05)":"none",WebkitTapHighlightColor:"transparent"}}>✍️ Escribir</button>
+            </div>
+
+            {inputMode==="photo" && (
+              <div style={{marginBottom:16}}>
+                {!photoPreview ? (
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    <button type="button" onClick={()=>cameraRef.current&&cameraRef.current.click()} style={{padding:"28px 12px",borderRadius:16,border:"2px dashed var(--line-strong)",background:"var(--bg-sunken)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                      <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,var(--primary),var(--primary-deep))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff"}}>📸</div>
+                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Tomar foto</div>
+                      <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Foto del plato</div>
+                    </button>
+                    <button type="button" onClick={()=>galleryRef.current&&galleryRef.current.click()} style={{padding:"28px 12px",borderRadius:16,border:"2px dashed var(--line-strong)",background:"var(--bg-sunken)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                      <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,var(--mint),var(--mint-deep))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff"}}>🖼️</div>
+                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Galería</div>
+                      <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Foto guardada</div>
+                    </button>
+                    <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{display:"none"}}/>
+                    <input ref={galleryRef} type="file" accept="image/*" onChange={handlePhoto} style={{display:"none"}}/>
+                  </div>
+                ) : (
+                  <div style={{position:"relative",borderRadius:16,overflow:"hidden",border:"1px solid var(--line)"}}>
+                    <img src={photoPreview} alt="Comida" style={{width:"100%",display:"block",maxHeight:280,objectFit:"cover"}}/>
+                    <button type="button" onClick={clearPhoto} style={{position:"absolute",top:10,right:10,background:"rgba(0,0,0,0.6)",border:"none",borderRadius:"50%",width:32,height:32,color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",WebkitTapHighlightColor:"transparent"}}>×</button>
+                  </div>
+                )}
+
+                <label style={{fontSize:11,color:"var(--ink-mute)",letterSpacing:1.5,textTransform:"uppercase",fontWeight:700,marginTop:14,marginBottom:8,display:"block"}}>Nota opcional</label>
+                <textarea rows={2} value={text} onChange={e=>setText(e.target.value)}
+                  placeholder="Ej: 'eran 2 huevos no 1', 'sin azúcar', 'porción grande'..."
+                  style={{width:"100%",background:"var(--bg-elev)",border:"1.5px solid var(--line)",borderRadius:14,padding:"12px 14px",color:"var(--ink)",fontSize:14,resize:"none",outline:"none",lineHeight:1.5,fontFamily:"inherit"}}/>
+              </div>
+            )}
+
+            {inputMode==="text" && (
+              <>
+                <label style={{fontSize:11,color:"var(--ink-mute)",letterSpacing:1.5,textTransform:"uppercase",fontWeight:700,marginBottom:10,display:"block"}}>Qué comiste? Incluye porciones</label>
+                <textarea rows={4} value={text} onChange={e=>setText(e.target.value)}
+                  placeholder="Ej: 2 huevos revueltos con jamón, 1 rebanada de pan tostado con mantequilla, 1 café con leche..."
+                  style={{width:"100%",background:"var(--bg-elev)",border:"1.5px solid var(--line)",borderRadius:16,padding:"15px 17px",color:"var(--ink)",fontSize:15,resize:"none",outline:"none",lineHeight:1.6,marginBottom:16,fontFamily:"inherit",transition:"all 0.2s"}}/>
+              </>
+            )}
+
+            <button onClick={analyze} disabled={(inputMode==="text"?!text.trim():!photo)||loading} style={{width:"100%",padding:16,background:(inputMode==="text"?!text.trim():!photo)||loading?"var(--bg-sunken)":"linear-gradient(135deg,var(--mint),var(--primary))",border:"none",borderRadius:16,color:(inputMode==="text"?!text.trim():!photo)||loading?"var(--ink-mute)":"#fff",fontSize:15,fontWeight:700,cursor:(inputMode==="text"?!text.trim():!photo)||loading?"not-allowed":"pointer",letterSpacing:0.3,boxShadow:(inputMode==="text"?!text.trim():!photo)||loading?"none":"0 8px 24px -8px rgba(16,185,129,0.5)"}}>
+              {loading ? (inputMode==="photo"?"Analizando foto…":"Analizando…") : "Analizar"}
+            </button>
+          </>
         )}
 
         {error && <div style={{color:"var(--danger)",fontSize:13,marginTop:10,textAlign:"center",padding:12,background:"rgba(239,68,68,0.08)",borderRadius:12,border:"1px solid rgba(239,68,68,0.2)"}}>{error}</div>}
@@ -475,7 +643,7 @@ function FoodLogModal({onSave,onClose,apiKey,askKey}) {
         {parsed && (
           <div className="fade" style={{marginTop:14}}>
             <div style={{background:"linear-gradient(135deg,rgba(16,185,129,0.06),rgba(8,145,178,0.04))",border:"1px solid var(--mint-soft)",borderRadius:20,padding:20}}>
-              <div style={{fontSize:11,color:"var(--mint-deep)",letterSpacing:1.5,fontWeight:700,marginBottom:14,textTransform:"uppercase"}}>✓ Análisis</div>
+              <div style={{fontSize:11,color:"var(--mint-deep)",letterSpacing:1.5,fontWeight:700,marginBottom:14,textTransform:"uppercase"}}>✓ Análisis {parsed.hasPhoto?"de foto":""}</div>
 
               {parsed.items && parsed.items.map((it,i)=>(
                 <div key={i} style={{padding:"12px 0",borderBottom:i<parsed.items.length-1?"1px solid var(--line)":"none"}}>
@@ -500,7 +668,7 @@ function FoodLogModal({onSave,onClose,apiKey,askKey}) {
             </div>
 
             <div style={{display:"flex",gap:10,marginTop:14}}>
-              <button onClick={()=>setParsed(null)} style={{flex:1,padding:14,background:"var(--bg-elev)",border:"1.5px solid var(--line)",borderRadius:14,color:"var(--ink-soft)",fontSize:13,cursor:"pointer",fontWeight:700}}>Editar</button>
+              <button onClick={()=>{setParsed(null);}} style={{flex:1,padding:14,background:"var(--bg-elev)",border:"1.5px solid var(--line)",borderRadius:14,color:"var(--ink-soft)",fontSize:13,cursor:"pointer",fontWeight:700}}>Editar</button>
               <button onClick={save} style={{flex:2,padding:14,background:"linear-gradient(135deg,var(--mint),var(--primary))",border:"none",borderRadius:14,color:"#fff",fontSize:14,cursor:"pointer",fontWeight:700,boxShadow:"0 6px 16px -4px rgba(16,185,129,0.4)"}}>Guardar</button>
             </div>
           </div>
@@ -514,6 +682,7 @@ function FoodLogModal({onSave,onClose,apiKey,askKey}) {
 
 function App() {
   const [profile,setProfile] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_profile"))||null; } catch(e){return null;} });
+  const [weightHistory,setWeightHistory] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_weight_history"))||[]; } catch(e){return [];} });
   const [showProfile,setShowProfile] = React.useState(false);
   const [tab,setTab] = React.useState("today");
   const [selectedDate,setSelectedDate] = React.useState(todayKey());
@@ -547,11 +716,16 @@ function App() {
   const chatAnyFileRef = React.useRef(null);
 
   React.useEffect(()=>{ if(profile) localStorage.setItem("mc_profile",JSON.stringify(profile)); },[profile]);
+  React.useEffect(()=>{ localStorage.setItem("mc_weight_history",JSON.stringify(weightHistory)); },[weightHistory]);
   React.useEffect(()=>{ localStorage.setItem("mc_log",JSON.stringify(foodLog)); },[foodLog]);
   React.useEffect(()=>{ localStorage.setItem("mc_plans",JSON.stringify(planData)); },[planData]);
   React.useEffect(()=>{ if(tab==="chat") setTimeout(()=>cEnd.current&&cEnd.current.scrollIntoView({behavior:"smooth"}),80); },[chat,tab]);
 
-  if (!profile) return <Onboarding onSave={p=>{setProfile(p);setChat([{r:"a",t:`Hola ${p.name}. Soy tu coach personal. Pregúntame lo que quieras.`}]);}}/>;
+  if (!profile) return <Onboarding onSave={p=>{
+    setProfile(p);
+    setWeightHistory([{date:todayKey(),weight:p.weight}]);
+    setChat([{r:"a",t:`Hola ${p.name}. Soy tu coach personal. Pregúntame lo que quieras.`}]);
+  }}/>;
   if (showProfile) return <Onboarding initial={profile} onSave={p=>{setProfile(p);setShowProfile(false);}}/>;
 
   const profData = buildProfile(profile);
@@ -568,7 +742,14 @@ function App() {
   const deleteFoodEntry = (id) => {
     setFoodLog(prev=>({...prev,[selectedDate]:(prev[selectedDate]||[]).filter(e=>e.id!==id)}));
   };
-  const updateWeight = w => setProfile(p=>({...p,weight:w}));
+  const updateWeight = w => {
+    setProfile(p=>({...p,weight:w}));
+    const today = todayKey();
+    setWeightHistory(prev => {
+      const filtered = prev.filter(e => e.date !== today);
+      return [...filtered, {date: today, weight: w}].sort((a,b)=>new Date(a.date)-new Date(b.date));
+    });
+  };
 
   const allDates = Array.from({length:30},(_,i)=>{
     const d = new Date(); d.setDate(d.getDate()-i);
@@ -820,7 +1001,7 @@ function App() {
                 </div>
               </div>
             ) : (
-              <WeightStat current={profile.weight} start={profile.startWeight} goal={profile.goalWeight}/>
+              <WeightStat current={profile.weight} start={profile.startWeight} goal={profile.goalWeight} history={weightHistory}/>
             )}
           </div>
 
