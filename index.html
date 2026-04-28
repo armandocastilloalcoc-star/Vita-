@@ -170,6 +170,32 @@ TIP: [consejo]`;
 const CHAT_PROMPT = (prof) => prof + `
 Eres coach experto: nutriologo + entrenador. Max 3 parrafos. Si pregunta medico delicado, recomienda consultar medico. Conoces el historial del usuario, usa esa informacion para dar respuestas personalizadas y hacer seguimiento.`;
 
+const WEEKLY_REPORT_PROMPT = (prof) => prof + `
+
+Genera un REPORTE SEMANAL completo de salud para el usuario basado en sus datos de los últimos 7 días.
+Estructura el reporte con estos apartados (usa emojis y formato claro, máximo 350 palabras):
+
+📊 RESUMEN
+- Calorías promedio del día y comparación con su objetivo
+- Tendencia general (vas bien, te pasaste, te quedaste corto)
+
+⚖️ PROGRESO DE PESO
+- Cambio en kg de la semana
+- Si va por buen camino o necesita ajustes
+
+🎯 MACROS - lo que más se debe cuidar
+- Identificar qué macro se está descuidando (proteína baja? azúcar alta? etc)
+- Recomendación específica
+
+📅 PATRONES IDENTIFICADOS
+- Días donde come más / menos
+- Tipo de comida que tiende a ser problemática
+
+💡 PLAN PARA LA PRÓXIMA SEMANA
+- 3 acciones concretas y simples para mejorar
+
+Tono: directo, motivacional pero realista, sin paternalismo. Usa "tú" para hablar al usuario.`;
+
 const MEMORY_SUMMARY_PROMPT = `Lee esta conversacion entre un coach nutricional/fitness y un usuario. Genera un resumen MUY breve (max 4 lineas) con SOLO datos importantes que el coach deberia recordar para futuras conversaciones:
 - Sintomas o problemas mencionados (hambre nocturna, ansiedad, fatiga, etc)
 - Metas o compromisos especificos del usuario
@@ -713,6 +739,9 @@ function App() {
   const photoInputRef = React.useRef(null);
   const cameraInputRef = React.useRef(null);
   const [exCtx,setExCtx] = React.useState("");
+  const [weeklyReport,setWeeklyReport] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_weekly_report"))||null; } catch(e){return null;} });
+  const [generatingReport,setGeneratingReport] = React.useState(false);
+  const [showReport,setShowReport] = React.useState(false);
   const [coachMemory,setCoachMemory] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_coach_memory"))||[]; } catch(e){return [];} });
   const [chat,setChat] = React.useState([{r:"a",t:profile?`Hola ${profile.name||""}. Soy tu coach. Pregúntame lo que quieras sobre tu alimentación, ejercicio o plan. Puedes adjuntar fotos o PDFs.`:"Hola."}]);
   const [cin,setCin] = React.useState("");
@@ -729,6 +758,7 @@ function App() {
   React.useEffect(()=>{ if(profile) localStorage.setItem("mc_profile",JSON.stringify(profile)); },[profile]);
   React.useEffect(()=>{ localStorage.setItem("mc_weight_history",JSON.stringify(weightHistory)); },[weightHistory]);
   React.useEffect(()=>{ localStorage.setItem("mc_coach_memory",JSON.stringify(coachMemory)); },[coachMemory]);
+  React.useEffect(()=>{ if(weeklyReport) localStorage.setItem("mc_weekly_report",JSON.stringify(weeklyReport)); },[weeklyReport]);
   React.useEffect(()=>{ localStorage.setItem("mc_log",JSON.stringify(foodLog)); },[foodLog]);
   React.useEffect(()=>{ localStorage.setItem("mc_plans",JSON.stringify(planData)); },[planData]);
   React.useEffect(()=>{ if(tab==="chat") setTimeout(()=>cEnd.current&&cEnd.current.scrollIntoView({behavior:"smooth"}),80); },[chat,tab]);
@@ -968,6 +998,73 @@ function App() {
     if (chatFileRef.current) chatFileRef.current.value = "";
   };
 
+  const generateWeeklyReport = async () => {
+    if (!key) { setShowKey(true); return; }
+    setGeneratingReport(true);
+    setShowReport(true);
+    try {
+      // Gather last 7 days of data
+      const last7Days = [];
+      for (let i=0; i<7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate()-i);
+        const k = d.toISOString().slice(0,10);
+        const entries = foodLog[k]||[];
+        const totals = sumDay(entries);
+        if (entries.length>0) {
+          last7Days.push({
+            date: k,
+            day: DAYS[d.getDay()],
+            entries: entries.length,
+            totals: totals,
+            meals: entries.map(e=>({meal:e.meal,items:e.items?e.items.map(i=>i.name).join(", "):e.originalText,kcal:e.totals.kcal}))
+          });
+        }
+      }
+      last7Days.reverse();
+
+      // Weight changes
+      const weightLastWeek = weightHistory.filter(w => {
+        const wd = new Date(w.date);
+        const limit = new Date(); limit.setDate(limit.getDate()-7);
+        return wd >= limit;
+      });
+      const weightStart = weightLastWeek.length>0?weightLastWeek[0].weight:profile.weight;
+      const weightEnd = profile.weight;
+      const weightChange = (weightEnd - weightStart).toFixed(1);
+
+      // Build context for AI
+      const reportData = `DATOS DE LA SEMANA:
+Peso al inicio: ${weightStart}kg
+Peso ahora: ${weightEnd}kg
+Cambio: ${weightChange}kg
+
+DÍAS REGISTRADOS: ${last7Days.length} de 7
+${last7Days.map(d=>`${d.day} ${d.date}: ${d.totals.kcal}kcal | P:${d.totals.protein}g C:${d.totals.carbs}g G:${d.totals.fat}g 🍬${d.totals.sugar}g | ${d.entries} comidas`).join('\n')}
+
+OBJETIVO DIARIO: ${profData.target}kcal
+Promedio semanal: ${last7Days.length>0?Math.round(last7Days.reduce((s,d)=>s+d.totals.kcal,0)/last7Days.length):0}kcal/día
+Días sin registro: ${7-last7Days.length}
+
+Genera el reporte semanal según las instrucciones.`;
+
+      const response = await api(key, WEEKLY_REPORT_PROMPT(profData.profile), [{role:"user",content:reportData}], 1500);
+      setWeeklyReport({
+        timestamp: Date.now(),
+        content: response,
+        daysAnalyzed: last7Days.length,
+        weightChange: weightChange
+      });
+    } catch(e) {
+      setWeeklyReport({
+        timestamp: Date.now(),
+        content: "Error generando reporte: "+e.message,
+        error: true
+      });
+    }
+    setGeneratingReport(false);
+  };
+
   const calcStreak = () => {
     let s = 0;
     for (let i=0;i<60;i++) {
@@ -1063,6 +1160,16 @@ function App() {
               </div>
             </div>
           )}
+
+          {/* Weekly report button */}
+          <button onClick={()=>{if(weeklyReport && !generatingReport){setShowReport(true);}else{generateWeeklyReport();}}} disabled={generatingReport} style={{...card,padding:16,width:"100%",cursor:generatingReport?"wait":"pointer",border:"1px solid var(--line)",background:"linear-gradient(135deg,rgba(8,145,178,0.06),rgba(16,185,129,0.04))",display:"flex",alignItems:"center",gap:14,WebkitTapHighlightColor:"transparent",touchAction:"manipulation",textAlign:"left"}}>
+            <div style={{width:46,height:46,borderRadius:14,background:"linear-gradient(135deg,var(--primary),var(--mint))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,color:"#fff",flexShrink:0,boxShadow:"0 4px 12px -4px rgba(8,145,178,0.4)"}}>📊</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:15,color:"var(--ink)",fontWeight:700,lineHeight:1.2}}>{generatingReport?"Generando reporte…":weeklyReport?"Mi reporte semanal":"Generar reporte semanal"}</div>
+              <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:3,fontWeight:500}}>{generatingReport?"Analizando últimos 7 días":weeklyReport?"Toca para ver tu análisis":"IA analiza tus últimos 7 días"}</div>
+            </div>
+            <div style={{fontSize:18,color:"var(--ink-mute)"}}>›</div>
+          </button>
 
           {/* CALORIES RING */}
           <div style={{...card,padding:28,textAlign:"center"}}>
@@ -1391,6 +1498,56 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Weekly Report Modal */}
+      {showReport && (
+        <div className="fadeIn" onClick={()=>setShowReport(false)} style={{position:"fixed",inset:0,background:"rgba(10,31,28,0.5)",backdropFilter:"blur(8px)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="fade" onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:"var(--bg-elev)",borderTopLeftRadius:32,borderTopRightRadius:32,padding:24,maxHeight:"92vh",overflowY:"auto",boxShadow:"0 -10px 40px -10px rgba(0,0,0,0.15)"}}>
+            <div style={{width:42,height:5,background:"var(--line-strong)",borderRadius:4,margin:"0 auto 22px"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+              <div>
+                <div className="serif" style={{fontSize:30,color:"var(--ink)",lineHeight:1}}>Tu reporte</div>
+                <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:4,fontWeight:500}}>Últimos 7 días</div>
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <button onClick={generateWeeklyReport} disabled={generatingReport} style={{background:"var(--bg-sunken)",border:"1px solid var(--line)",borderRadius:10,padding:"6px 12px",color:"var(--primary)",fontSize:11,fontWeight:700,cursor:generatingReport?"wait":"pointer",letterSpacing:0.3}}>{generatingReport?"...":"↻ Actualizar"}</button>
+                <button onClick={()=>setShowReport(false)} style={{background:"var(--bg-sunken)",border:"none",borderRadius:"50%",width:36,height:36,color:"var(--ink-soft)",fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              </div>
+            </div>
+
+            {generatingReport ? (
+              <div style={{padding:"40px 20px",textAlign:"center"}}>
+                <Dots/>
+                <div style={{fontSize:14,color:"var(--ink-mute)",marginTop:14,fontWeight:600}}>Analizando tu semana…</div>
+                <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:6}}>Esto toma 5-10 segundos</div>
+              </div>
+            ) : weeklyReport ? (
+              <>
+                <div style={{display:"flex",gap:10,marginBottom:18}}>
+                  <div style={{flex:1,padding:"12px 14px",background:"var(--mint-soft)",borderRadius:12}}>
+                    <div style={{fontSize:10,color:"var(--mint-deep)",letterSpacing:1,fontWeight:700,textTransform:"uppercase"}}>Cambio peso</div>
+                    <div style={{fontSize:20,color:"var(--mint-deep)",fontWeight:800,marginTop:3}}>
+                      {weeklyReport.weightChange>=0?"+":""}{weeklyReport.weightChange}<span style={{fontSize:12,fontWeight:600}}>kg</span>
+                    </div>
+                  </div>
+                  <div style={{flex:1,padding:"12px 14px",background:"var(--primary-soft)",borderRadius:12}}>
+                    <div style={{fontSize:10,color:"var(--primary-deep)",letterSpacing:1,fontWeight:700,textTransform:"uppercase"}}>Días tracked</div>
+                    <div style={{fontSize:20,color:"var(--primary-deep)",fontWeight:800,marginTop:3}}>{weeklyReport.daysAnalyzed}<span style={{fontSize:12,fontWeight:600}}>/7</span></div>
+                  </div>
+                </div>
+
+                <div style={{background:"var(--bg-sunken)",borderRadius:16,padding:18,fontSize:14,lineHeight:1.7,color:"var(--ink)",whiteSpace:"pre-wrap"}}>
+                  {weeklyReport.content}
+                </div>
+
+                <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",marginTop:14,fontWeight:500}}>
+                  Generado {new Date(weeklyReport.timestamp).toLocaleString("es-MX",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
       )}
