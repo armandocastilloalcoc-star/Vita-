@@ -168,7 +168,17 @@ BALANCE: Comiste ~XXXX - quemas ~XXX = deficit ~XXX
 TIP: [consejo]`;
 
 const CHAT_PROMPT = (prof) => prof + `
-Eres coach experto: nutriologo + entrenador. Max 3 parrafos. Si pregunta medico delicado, recomienda consultar medico.`;
+Eres coach experto: nutriologo + entrenador. Max 3 parrafos. Si pregunta medico delicado, recomienda consultar medico. Conoces el historial del usuario, usa esa informacion para dar respuestas personalizadas y hacer seguimiento.`;
+
+const MEMORY_SUMMARY_PROMPT = `Lee esta conversacion entre un coach nutricional/fitness y un usuario. Genera un resumen MUY breve (max 4 lineas) con SOLO datos importantes que el coach deberia recordar para futuras conversaciones:
+- Sintomas o problemas mencionados (hambre nocturna, ansiedad, fatiga, etc)
+- Metas o compromisos especificos del usuario
+- Reacciones a alimentos o medicamentos
+- Preferencias nuevas reveladas
+- Avances o retrocesos reportados
+
+NO incluyas: saludos, preguntas generales, o info ya en el perfil base.
+Formato: lista corta con viñetas. Si no hay nada relevante, responde solo "NADA".`;
 
 const DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 const MEAL_ICONS = {desayuno:"☀",almuerzo:"◐",cena:"☾",snack:"◇"};
@@ -703,6 +713,7 @@ function App() {
   const photoInputRef = React.useRef(null);
   const cameraInputRef = React.useRef(null);
   const [exCtx,setExCtx] = React.useState("");
+  const [coachMemory,setCoachMemory] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_coach_memory"))||[]; } catch(e){return [];} });
   const [chat,setChat] = React.useState([{r:"a",t:profile?`Hola ${profile.name||""}. Soy tu coach. Pregúntame lo que quieras sobre tu alimentación, ejercicio o plan. Puedes adjuntar fotos o PDFs.`:"Hola."}]);
   const [cin,setCin] = React.useState("");
   const [cL,setCL] = React.useState(false);
@@ -717,6 +728,7 @@ function App() {
 
   React.useEffect(()=>{ if(profile) localStorage.setItem("mc_profile",JSON.stringify(profile)); },[profile]);
   React.useEffect(()=>{ localStorage.setItem("mc_weight_history",JSON.stringify(weightHistory)); },[weightHistory]);
+  React.useEffect(()=>{ localStorage.setItem("mc_coach_memory",JSON.stringify(coachMemory)); },[coachMemory]);
   React.useEffect(()=>{ localStorage.setItem("mc_log",JSON.stringify(foodLog)); },[foodLog]);
   React.useEffect(()=>{ localStorage.setItem("mc_plans",JSON.stringify(planData)); },[planData]);
   React.useEffect(()=>{ if(tab==="chat") setTimeout(()=>cEnd.current&&cEnd.current.scrollIntoView({behavior:"smooth"}),80); },[chat,tab]);
@@ -727,6 +739,17 @@ function App() {
     setChat([{r:"a",t:`Hola ${p.name}. Soy tu coach personal. Pregúntame lo que quieras.`}]);
   }}/>;
   if (showProfile) return <Onboarding initial={profile} onSave={p=>{setProfile(p);setShowProfile(false);}}/>;
+
+  // Smart greeting based on memory (only first render)
+  React.useEffect(()=>{
+    if (profile && chat.length===1 && coachMemory.length>0) {
+      const lastMem = coachMemory[coachMemory.length-1];
+      const daysAgo = Math.round((Date.now()-lastMem.timestamp)/86400000);
+      const timeStr = daysAgo===0?"hoy":daysAgo===1?"ayer":"hace "+daysAgo+" días";
+      setChat([{r:"a",t:`Hola ${profile.name}, qué bueno verte. La última vez que platicamos (${timeStr}) hablamos de algunas cosas. ¿Cómo vas con eso? ¿En qué te ayudo hoy?`}]);
+    }
+    // eslint-disable-next-line
+  },[]);
 
   const profData = buildProfile(profile);
   const macroTargets = getMacroTargets(profData.target,profile.weight);
@@ -844,7 +867,17 @@ function App() {
     if (chatFileRef.current) chatFileRef.current.value = "";
 
     const ctx2 = todayEntries.length>0?`\n\nContexto del día: consumido ${Math.round(todayTotals.kcal)}kcal de ${profData.target}, proteína ${Math.round(todayTotals.protein)}g, azúcar ${Math.round(todayTotals.sugar)}g.`:"";
-    const sysPrompt = CHAT_PROMPT(profData.profile)+ctx2;
+
+    // Include memory summary in system prompt
+    let memoryContext = "";
+    if (coachMemory.length>0) {
+      const recentMem = coachMemory.slice(-5);
+      memoryContext = "\n\nMEMORIA DE CONVERSACIONES PASADAS (usa esto para personalizar):\n" + recentMem.map(m=>{
+        const daysAgo = Math.round((Date.now()-m.timestamp)/86400000);
+        return "- ("+daysAgo+" días atrás): "+m.summary;
+      }).join("\n");
+    }
+    const sysPrompt = CHAT_PROMPT(profData.profile)+ctx2+memoryContext;
 
     try {
       let responseText;
@@ -883,6 +916,21 @@ function App() {
         responseText = d.content[0].text;
       }
       setChat(m=>[...m,{r:"a",t:responseText}]);
+
+      // Trigger memory summarization every 6 user messages
+      const userMsgCount = nc.filter(m=>m.r==="u").length;
+      if (userMsgCount > 0 && userMsgCount % 6 === 0) {
+        // Async, don't block
+        (async ()=>{
+          try {
+            const convoText = nc.slice(-12).map(m=>(m.r==="u"?"Usuario":"Coach")+": "+m.t).join("\n");
+            const summary = await api(key, MEMORY_SUMMARY_PROMPT, [{role:"user",content:convoText}], 200);
+            if (summary && !summary.trim().toUpperCase().includes("NADA")) {
+              setCoachMemory(prev => [...prev, {timestamp:Date.now(), summary:summary.trim()}].slice(-20));
+            }
+          } catch(e) { /* silently fail, no biggie */ }
+        })();
+      }
     } catch(e) {
       setChat(m=>[...m,{r:"a",t:"Error: "+e.message}]);
     }
@@ -1247,7 +1295,15 @@ function App() {
       {/* TAB: CHAT */}
       {tab==="chat" && (
         <div className="fade" style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 145px)"}}>
-          <div style={{flex:1,overflowY:"auto",padding:"20px 20px 8px",maxWidth:640,width:"100%",margin:"0 auto"}}>
+          {coachMemory.length>0 && (
+            <div style={{padding:"6px 20px",maxWidth:640,width:"100%",margin:"0 auto"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"6px 12px",background:"var(--mint-soft)",border:"1px solid var(--line)",borderRadius:20,fontSize:11,color:"var(--mint-deep)",fontWeight:600}}>
+                <span>🧠 Coach con memoria de {coachMemory.length} {coachMemory.length===1?"conversación":"conversaciones"}</span>
+                <button onClick={()=>{if(confirm("¿Borrar la memoria del coach? Empezará desde cero.")){setCoachMemory([]);setChat([{r:"a",t:`Hola ${profile.name}. Empezamos desde cero. ¿En qué te ayudo?`}]);}}} style={{background:"transparent",border:"none",color:"var(--ink-mute)",fontSize:11,cursor:"pointer",fontWeight:600,textDecoration:"underline"}}>borrar</button>
+              </div>
+            </div>
+          )}
+          <div style={{flex:1,overflowY:"auto",padding:"14px 20px 8px",maxWidth:640,width:"100%",margin:"0 auto"}}>
             {chat.map((m,i)=>(
               <div key={i} className="fade" style={{marginBottom:12,display:"flex",flexDirection:"column",alignItems:m.r==="u"?"flex-end":"flex-start"}}>
                 {m.att && m.attType && m.attType.startsWith("image/") && (
