@@ -253,7 +253,19 @@ function fileToBase64(file) {
   });
 }
 
-const todayKey = () => new Date().toISOString().slice(0,10);
+const todayKey = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+day;
+};
+const dateKey = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+day;
+};
 const fmtDate = (iso) => { const d = new Date(iso+"T12:00:00"); return DAYS[d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1); };
 const sumDay = (entries) => {
   const t = {kcal:0,protein:0,carbs:0,fat:0,sugar:0,fiber:0,sodium:0};
@@ -281,14 +293,28 @@ function Ring({value,max,size=200,color="#0891b2",thickness=12,children}) {
   );
 }
 
-function MacroRing({label,current,target,color,unit="g",icon}) {
+function MacroRing({label,current,target,color,unit="g",icon,onClick,isLimit}) {
   const pct = target>0?Math.min(1.5,(current/target)):0;
   const over = pct>1.1;
+  const short = !isLimit && pct < 0.7 && current > 0;
+  const empty = current === 0;
   const r = 26;
   const c = 2*Math.PI*r;
   const offset = c * (1-Math.min(1,pct));
+
+  // Status indicator (small dot)
+  let statusColor = "var(--ink-mute)";
+  let statusIcon = "";
+  if (empty) { statusColor = "var(--ink-mute)"; }
+  else if (over) { statusColor = "var(--danger)"; statusIcon = "↑"; }
+  else if (short) { statusColor = "var(--warn)"; statusIcon = "↓"; }
+  else if (pct >= 0.85) { statusColor = "var(--mint-deep)"; statusIcon = "✓"; }
+
   return (
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:"10px 6px",background:"var(--bg-elev)",borderRadius:18,border:"1px solid var(--line)"}}>
+    <button onClick={onClick} type="button" style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:"10px 6px",background:"var(--bg-elev)",borderRadius:18,border:"1px solid var(--line)",cursor:"pointer",WebkitTapHighlightColor:"transparent",touchAction:"manipulation",position:"relative"}}>
+      {statusIcon && (
+        <div style={{position:"absolute",top:6,right:6,width:16,height:16,borderRadius:"50%",background:statusColor,color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{statusIcon}</div>
+      )}
       <div style={{position:"relative",width:64,height:64}}>
         <svg width="64" height="64" style={{transform:"rotate(-90deg)"}}>
           <circle cx="32" cy="32" r={r} fill="none" stroke="var(--bg-sunken)" strokeWidth="5"/>
@@ -300,8 +326,53 @@ function MacroRing({label,current,target,color,unit="g",icon}) {
       <div style={{fontSize:13,color:over?"var(--danger)":"var(--ink)",fontWeight:700,fontVariantNumeric:"tabular-nums",lineHeight:1}}>
         {Math.round(current)}<span style={{color:"var(--ink-mute)",fontWeight:500}}>/{target}{unit}</span>
       </div>
-    </div>
+    </button>
   );
+}
+
+const MACRO_TIPS = {
+  protein: {
+    short: "Te falta proteína. Agrega: 2 huevos (12g), 100g pechuga (30g), 1 lata de atún (25g), o 1 yogurt griego (15g).",
+    empty: "Empieza el día con proteína: huevos, yogurt griego o un licuado con proteína en polvo."
+  },
+  carbs: {
+    short: "Te quedas corto en carbos. Agrega: 1 plátano (27g), 1/2 taza de arroz (22g), o 1 rebanada de pan integral (15g).",
+    over: "Te pasaste de carbos. Mañana reduce porciones de pan, tortilla, arroz o pasta. Sustituye con verduras o proteína.",
+    empty: "Necesitas energía. Una fruta, avena, o 1 tortilla de maíz son buenas opciones."
+  },
+  fat: {
+    short: "Faltan grasas buenas: 1/4 aguacate (7g), 10 almendras (6g), 1 cucharada de aceite de oliva (14g).",
+    over: "Te pasaste de grasas. Reduce frituras, mantequilla, quesos, embutidos. Prefiere proteínas magras.",
+    empty: "Las grasas saludables son importantes: aguacate, frutos secos, aceite de oliva o pescado."
+  },
+  fiber: {
+    short: "Faltan fibras. Agrega: 1 manzana (4g), 1/2 taza de avena (4g), 1/2 taza de frijoles (8g) o 1/4 taza de chía (10g).",
+    empty: "Sin fibra hoy. Avena, frijoles, manzana o chía te ayudan."
+  },
+  sugar: {
+    over: "Te pasaste de azúcar. Esto te puede dar antojos y picos de energía. Mañana evita refrescos, jugos, postres y reduce frutas dulces.",
+  },
+  sodium: {
+    over: "Sodio elevado. Hoy tomate más agua. Mañana reduce embutidos, quesos, snacks salados y comida procesada.",
+  }
+};
+
+function getMacroAdvice(key, current, target, isLimit) {
+  const pct = target>0?(current/target):0;
+  const tips = MACRO_TIPS[key] || {};
+  if (current === 0 && !isLimit) return {status:"empty", title:"Sin registro", color:"var(--ink-mute)", text:tips.empty||"Aún no has registrado nada de este macro hoy."};
+  if (isLimit) {
+    // sugar, sodium - we want to be UNDER target
+    if (pct > 1.1) return {status:"over", title:"Te pasaste", color:"var(--danger)", text:tips.over||"Te pasaste del límite recomendado."};
+    if (pct > 0.85) return {status:"close", title:"Cerca del límite", color:"var(--warn)", text:"Estás cerca del límite, cuida lo que comas el resto del día."};
+    return {status:"ok", title:"Vas bien", color:"var(--mint-deep)", text:"Vas dentro del rango saludable. Sigue así."};
+  } else {
+    // protein, carbs, fat, fiber - we want to HIT target
+    if (pct > 1.1) return {status:"over", title:"Te pasaste", color:"var(--warn)", text:tips.over||"Te pasaste del objetivo. No es grave si es ocasional."};
+    if (pct >= 0.85) return {status:"ok", title:"Excelente", color:"var(--mint-deep)", text:"Llegaste a tu objetivo. Muy bien."};
+    if (pct >= 0.5) return {status:"short", title:"Vas a medias", color:"var(--warn)", text:tips.short||"Te falta para llegar a tu objetivo del día."};
+    return {status:"low", title:"Te quedas corto", color:"var(--danger)", text:tips.short||"Estás muy abajo del objetivo. Es importante completar este macro."};
+  }
 }
 
 function WeightChart({history,current,goal,start}) {
@@ -739,6 +810,7 @@ function App() {
   const photoInputRef = React.useRef(null);
   const cameraInputRef = React.useRef(null);
   const [exCtx,setExCtx] = React.useState("");
+  const [macroDetail,setMacroDetail] = React.useState(null);
   const [weeklyReport,setWeeklyReport] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_weekly_report"))||null; } catch(e){return null;} });
   const [generatingReport,setGeneratingReport] = React.useState(false);
   const [showReport,setShowReport] = React.useState(false);
@@ -806,7 +878,7 @@ function App() {
 
   const allDates = Array.from({length:30},(_,i)=>{
     const d = new Date(); d.setDate(d.getDate()-i);
-    return d.toISOString().slice(0,10);
+    return dateKey(d);
   });
 
   const getAlerts = () => {
@@ -1008,7 +1080,7 @@ function App() {
       for (let i=0; i<7; i++) {
         const d = new Date();
         d.setDate(d.getDate()-i);
-        const k = d.toISOString().slice(0,10);
+        const k = dateKey(d);
         const entries = foodLog[k]||[];
         const totals = sumDay(entries);
         if (entries.length>0) {
@@ -1069,7 +1141,7 @@ Genera el reporte semanal según las instrucciones.`;
     let s = 0;
     for (let i=0;i<60;i++) {
       const d = new Date(); d.setDate(d.getDate()-i);
-      const k = d.toISOString().slice(0,10);
+      const k = dateKey(d);
       if (foodLog[k]&&foodLog[k].length>0) s++;
       else if (i>0) break;
     }
@@ -1191,12 +1263,12 @@ Genera el reporte semanal según las instrucciones.`;
                 <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:600,letterSpacing:0.5,textTransform:"uppercase"}}>Distribución</div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-                <MacroRing label="Proteína" icon="🫘" current={todayTotals.protein} target={macroTargets.protein} color="var(--mint)"/>
-                <MacroRing label="Carbos" icon="🍞" current={todayTotals.carbs} target={macroTargets.carbs} color="var(--primary)"/>
-                <MacroRing label="Grasas" icon="🥑" current={todayTotals.fat} target={macroTargets.fat} color="var(--warn)"/>
-                <MacroRing label="Azúcar" icon="🍯" current={todayTotals.sugar} target={macroTargets.sugar} color="#f59e0b"/>
-                <MacroRing label="Fibra" icon="🌾" current={todayTotals.fiber} target={macroTargets.fiber} color="var(--mint-deep)"/>
-                <MacroRing label="Sodio" icon="🧂" current={todayTotals.sodium} target={2300} unit="mg" color="var(--ink-soft)"/>
+                <MacroRing label="Proteína" icon="🫘" current={todayTotals.protein} target={macroTargets.protein} color="var(--mint)" onClick={()=>setMacroDetail({key:"protein",label:"Proteína",icon:"🫘",current:todayTotals.protein,target:macroTargets.protein,unit:"g",isLimit:false})}/>
+                <MacroRing label="Carbos" icon="🍞" current={todayTotals.carbs} target={macroTargets.carbs} color="var(--primary)" onClick={()=>setMacroDetail({key:"carbs",label:"Carbohidratos",icon:"🍞",current:todayTotals.carbs,target:macroTargets.carbs,unit:"g",isLimit:false})}/>
+                <MacroRing label="Grasas" icon="🥑" current={todayTotals.fat} target={macroTargets.fat} color="var(--warn)" onClick={()=>setMacroDetail({key:"fat",label:"Grasas",icon:"🥑",current:todayTotals.fat,target:macroTargets.fat,unit:"g",isLimit:false})}/>
+                <MacroRing label="Azúcar" icon="🍯" current={todayTotals.sugar} target={macroTargets.sugar} color="#f59e0b" isLimit={true} onClick={()=>setMacroDetail({key:"sugar",label:"Azúcar",icon:"🍯",current:todayTotals.sugar,target:macroTargets.sugar,unit:"g",isLimit:true})}/>
+                <MacroRing label="Fibra" icon="🌾" current={todayTotals.fiber} target={macroTargets.fiber} color="var(--mint-deep)" onClick={()=>setMacroDetail({key:"fiber",label:"Fibra",icon:"🌾",current:todayTotals.fiber,target:macroTargets.fiber,unit:"g",isLimit:false})}/>
+                <MacroRing label="Sodio" icon="🧂" current={todayTotals.sodium} target={2300} unit="mg" color="var(--ink-soft)" isLimit={true} onClick={()=>setMacroDetail({key:"sodium",label:"Sodio",icon:"🧂",current:todayTotals.sodium,target:2300,unit:"mg",isLimit:true})}/>
               </div>
             </div>
           )}
@@ -1501,6 +1573,54 @@ Genera el reporte semanal según las instrucciones.`;
           </div>
         </div>
       )}
+
+      {/* Macro Detail Modal */}
+      {macroDetail && (() => {
+        const advice = getMacroAdvice(macroDetail.key, macroDetail.current, macroDetail.target, macroDetail.isLimit);
+        const diff = macroDetail.target - macroDetail.current;
+        const pct = macroDetail.target>0?Math.round((macroDetail.current/macroDetail.target)*100):0;
+        return (
+          <div className="fadeIn" onClick={()=>setMacroDetail(null)} style={{position:"fixed",inset:0,background:"rgba(10,31,28,0.5)",backdropFilter:"blur(8px)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div className="fade" onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:"var(--bg-elev)",borderTopLeftRadius:32,borderTopRightRadius:32,padding:24,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 -10px 40px -10px rgba(0,0,0,0.15)"}}>
+              <div style={{width:42,height:5,background:"var(--line-strong)",borderRadius:4,margin:"0 auto 22px"}}/>
+
+              <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:18}}>
+                <div style={{width:60,height:60,borderRadius:18,background:"var(--bg-sunken)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:32}}>{macroDetail.icon}</div>
+                <div style={{flex:1}}>
+                  <div className="serif" style={{fontSize:26,color:"var(--ink)",lineHeight:1}}>{macroDetail.label}</div>
+                  <div style={{fontSize:12,color:advice.color,marginTop:4,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{advice.title}</div>
+                </div>
+                <button onClick={()=>setMacroDetail(null)} style={{background:"var(--bg-sunken)",border:"none",borderRadius:"50%",width:36,height:36,color:"var(--ink-soft)",fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              </div>
+
+              <div style={{display:"flex",gap:10,marginBottom:18}}>
+                <div style={{flex:1,padding:"14px 16px",background:"var(--bg-sunken)",borderRadius:14}}>
+                  <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1,fontWeight:700,textTransform:"uppercase"}}>Llevas</div>
+                  <div style={{fontSize:22,color:"var(--ink)",fontWeight:800,marginTop:4,lineHeight:1}}>{Math.round(macroDetail.current)}<span style={{fontSize:13,color:"var(--ink-mute)",fontWeight:600}}>{macroDetail.unit}</span></div>
+                </div>
+                <div style={{flex:1,padding:"14px 16px",background:"var(--bg-sunken)",borderRadius:14}}>
+                  <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1,fontWeight:700,textTransform:"uppercase"}}>{macroDetail.isLimit?"Límite":"Meta"}</div>
+                  <div style={{fontSize:22,color:"var(--ink)",fontWeight:800,marginTop:4,lineHeight:1}}>{macroDetail.target}<span style={{fontSize:13,color:"var(--ink-mute)",fontWeight:600}}>{macroDetail.unit}</span></div>
+                </div>
+                <div style={{flex:1,padding:"14px 16px",background:"var(--bg-sunken)",borderRadius:14}}>
+                  <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1,fontWeight:700,textTransform:"uppercase"}}>{diff>=0?"Faltan":"Pasaste"}</div>
+                  <div style={{fontSize:22,color:diff>=0?"var(--ink)":"var(--danger)",fontWeight:800,marginTop:4,lineHeight:1}}>{Math.abs(Math.round(diff))}<span style={{fontSize:13,color:"var(--ink-mute)",fontWeight:600}}>{macroDetail.unit}</span></div>
+                </div>
+              </div>
+
+              <div style={{height:8,background:"var(--bg-sunken)",borderRadius:6,overflow:"hidden",marginBottom:6}}>
+                <div style={{height:"100%",width:Math.min(100,pct)+"%",background:advice.color,borderRadius:6,transition:"width 1s cubic-bezier(0.16,1,0.3,1)"}}/>
+              </div>
+              <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:600,textAlign:"right",marginBottom:18}}>{pct}% {macroDetail.isLimit?"del límite":"de tu meta"}</div>
+
+              <div style={{padding:"16px 18px",background:"linear-gradient(135deg,rgba(8,145,178,0.06),rgba(16,185,129,0.04))",border:"1px solid var(--line)",borderRadius:16}}>
+                <div style={{fontSize:11,color:"var(--ink-mute)",letterSpacing:1.5,fontWeight:700,textTransform:"uppercase",marginBottom:8}}>💡 Recomendación</div>
+                <div style={{fontSize:14,color:"var(--ink)",lineHeight:1.6}}>{advice.text}</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Weekly Report Modal */}
       {showReport && (
