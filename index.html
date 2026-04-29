@@ -852,6 +852,7 @@ function App() {
   const cameraInputRef = React.useRef(null);
   const [exCtx,setExCtx] = React.useState("");
   const [macroDetail,setMacroDetail] = React.useState(null);
+  const [waterLog,setWaterLog] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_water_log"))||{}; } catch(e){return {};} });
   const [weeklyReport,setWeeklyReport] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_weekly_report"))||null; } catch(e){return null;} });
   const [generatingReport,setGeneratingReport] = React.useState(false);
   const [showReport,setShowReport] = React.useState(false);
@@ -872,6 +873,7 @@ function App() {
   React.useEffect(()=>{ localStorage.setItem("mc_weight_history",JSON.stringify(weightHistory)); },[weightHistory]);
   React.useEffect(()=>{ localStorage.setItem("mc_coach_memory",JSON.stringify(coachMemory)); },[coachMemory]);
   React.useEffect(()=>{ if(weeklyReport) localStorage.setItem("mc_weekly_report",JSON.stringify(weeklyReport)); },[weeklyReport]);
+  React.useEffect(()=>{ localStorage.setItem("mc_water_log",JSON.stringify(waterLog)); },[waterLog]);
   React.useEffect(()=>{ localStorage.setItem("mc_log",JSON.stringify(foodLog)); },[foodLog]);
   React.useEffect(()=>{ localStorage.setItem("mc_plans",JSON.stringify(planData)); },[planData]);
   React.useEffect(()=>{ if(tab==="chat") setTimeout(()=>cEnd.current&&cEnd.current.scrollIntoView({behavior:"smooth"}),80); },[chat,tab]);
@@ -1009,7 +1011,47 @@ function App() {
     if (chatCameraRef.current) chatCameraRef.current.value = "";
     if (chatFileRef.current) chatFileRef.current.value = "";
 
-    const ctx2 = todayEntries.length>0?`\n\nContexto del día: consumido ${Math.round(todayTotals.kcal)}kcal de ${profData.target}, proteína ${Math.round(todayTotals.protein)}g, azúcar ${Math.round(todayTotals.sugar)}g.`:"";
+    // Build full food context for coach
+    const waterToday = waterLog[todayKey()] || 0;
+    const waterGoalCtx = Math.round((profile.weight||80)*0.035*10)/10;
+    let foodCtx = "";
+    if (todayEntries.length > 0) {
+      const byMeal = {};
+      todayEntries.forEach(e => {
+        if (!byMeal[e.meal]) byMeal[e.meal] = [];
+        const items = e.items ? e.items.map(i=>`${i.name} (${i.portion}, ${i.kcal}kcal)`).join(", ") : e.originalText;
+        byMeal[e.meal].push(items);
+      });
+      const mealLines = Object.entries(byMeal).map(([meal,items])=>`  ${meal}: ${items.join(" + ")}`).join("\n");
+      foodCtx = `\n\nCOMIDA DE HOY (${todayKey()}):
+${mealLines}
+TOTALES HOY: ${Math.round(todayTotals.kcal)}kcal de ${profData.target} objetivo | Proteína: ${Math.round(todayTotals.protein)}g/${macroTargets.protein}g | Carbos: ${Math.round(todayTotals.carbs)}g | Grasas: ${Math.round(todayTotals.fat)}g | Azúcar: ${Math.round(todayTotals.sugar)}g (límite ${macroTargets.sugar}g) | Fibra: ${Math.round(todayTotals.fiber)}g | Sodio: ${Math.round(todayTotals.sodium)}mg
+AGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
+    } else {
+      foodCtx = `\n\nCOMIDA DE HOY: Sin registro todavía.\nAGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
+    }
+
+    // Last 3 days for pattern awareness
+    let recentFoodCtx = "";
+    for (let d=1; d<=3; d++) {
+      const past = new Date(); past.setDate(past.getDate()-d);
+      const k = dateKey(past);
+      const entries = foodLog[k]||[];
+      if (entries.length > 0) {
+        const t = sumDay(entries);
+        const dayName = ["dom","lun","mar","mié","jue","vie","sáb"][past.getDay()];
+        recentFoodCtx += `\n  ${dayName} ${k}: ${Math.round(t.kcal)}kcal, P:${Math.round(t.protein)}g, C:${Math.round(t.carbs)}g, G:${Math.round(t.fat)}g`;
+      }
+    }
+    if (recentFoodCtx) foodCtx += `\nÚLTIMOS 3 DÍAS:${recentFoodCtx}`;
+
+    // Weight history
+    if (weightHistory.length > 0) {
+      const last3w = weightHistory.slice(-3).map(w=>`${w.date}: ${w.weight}kg`).join(", ");
+      foodCtx += `\nPESO RECIENTE: ${last3w}`;
+    }
+
+    const ctx2 = foodCtx;
 
     // Include memory summary in system prompt
     let memoryContext = "";
@@ -1109,6 +1151,13 @@ function App() {
     if (chatPhotoRef.current) chatPhotoRef.current.value = "";
     if (chatCameraRef.current) chatCameraRef.current.value = "";
     if (chatFileRef.current) chatFileRef.current.value = "";
+  };
+
+  const todayWater = waterLog[todayKey()] || 0;
+  const waterGoal = Math.round((profile.weight || 80) * 0.035 * 10) / 10; // 35ml/kg in liters
+  const addWater = (ml) => {
+    const k = todayKey();
+    setWaterLog(prev => ({...prev, [k]: Math.max(0, (prev[k]||0) + ml)}));
   };
 
   const generateWeeklyReport = async () => {
@@ -1260,6 +1309,38 @@ Genera el reporte semanal según las instrucciones.`;
               </div>
             ) : (
               <WeightStat current={profile.weight} start={profile.startWeight} goal={profile.goalWeight} history={weightHistory}/>
+            )}
+          </div>
+
+          {/* WATER TRACKER */}
+          <div style={{...card,padding:18}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{fontSize:22}}>💧</div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:"var(--ink)"}}>Agua</div>
+                  <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:500}}>Meta: {waterGoal}L ({Math.round(waterGoal*1000)}ml)</div>
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div className="serif" style={{fontSize:28,color:todayWater>=waterGoal*1000?"var(--mint-deep)":"var(--primary)",lineHeight:1}}>{(todayWater/1000).toFixed(1)}</div>
+                <div style={{fontSize:10,color:"var(--ink-mute)",fontWeight:600}}>litros hoy</div>
+              </div>
+            </div>
+            <div style={{height:7,background:"var(--bg-sunken)",borderRadius:6,overflow:"hidden",marginBottom:12}}>
+              <div style={{height:"100%",width:Math.min(100,(todayWater/(waterGoal*1000))*100)+"%",background:"linear-gradient(90deg,#38bdf8,var(--primary))",borderRadius:6,transition:"width 0.8s cubic-bezier(0.16,1,0.3,1)"}}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+              {[{ml:150,icon:"🥛",label:"Vaso"},{ml:250,icon:"🥤",label:"Taza"},{ml:500,icon:"🍶",label:"Botella"},{ml:-200,icon:"↩",label:"Quitar"}].map(({ml,icon,label})=>(
+                <button key={ml} type="button" onClick={()=>addWater(ml)} style={{padding:"10px 4px",borderRadius:12,border:"1.5px solid var(--line)",background:ml<0?"var(--bg-sunken)":"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                  <div style={{fontSize:18}}>{icon}</div>
+                  <div style={{fontSize:10,fontWeight:700,color:"var(--ink)"}}>{label}</div>
+                  <div style={{fontSize:9,color:"var(--ink-mute)"}}>{ml>0?"+"+ml+"ml":ml+"ml"}</div>
+                </button>
+              ))}
+            </div>
+            {todayWater>=waterGoal*1000 && (
+              <div style={{marginTop:10,padding:"8px 12px",background:"var(--mint-soft)",borderRadius:10,fontSize:12,color:"var(--mint-deep)",fontWeight:700,textAlign:"center"}}>✓ Meta de agua alcanzada 🎉</div>
             )}
           </div>
 
