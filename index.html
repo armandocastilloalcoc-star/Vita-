@@ -1993,7 +1993,7 @@ async function apiVisionMulti(k, sys, prompt, photos, max=2500) {
     method:"POST",
     headers:{"Content-Type":"application/json","x-api-key":k,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
     body:JSON.stringify({
-      model:"claude-sonnet-4-5",
+      model:"claude-opus-4-5-20251101",
       max_tokens:max,
       system:sys,
       messages:[{role:"user",content:[...imageBlocks,{type:"text",text:prompt}]}]
@@ -2426,8 +2426,8 @@ function FoodLogModal({onSave,onClose,apiKey,askKey}) {
     if (inputMode==="photo" && photos.length===0) return;
     if (!apiKey) { askKey(); return; }
     setLoading(true); setError("");
+    let resp = "";
     try {
-      let resp;
       if (inputMode==="photo") {
         const multiContext = photos.length>1 ? "Estás viendo "+photos.length+" fotos relacionadas a UNA SOLA comida (ej: el alimento, su empaque, la información nutrimental, ingredientes). Combina toda la información visible para hacer un análisis preciso. " : "";
         const photoPrompt = multiContext+"Analiza la(s) foto(s). Identifica TODOS los alimentos, lee etiquetas nutrimentales si las hay, estima porciones realistas y calcula valores nutricionales precisos. " + (text.trim() ? "Contexto adicional del usuario: "+text : "");
@@ -2439,10 +2439,18 @@ function FoodLogModal({onSave,onClose,apiKey,askKey}) {
       } else {
         resp = await api(apiKey, FOOD_LOG_PROMPT, [{role:"user",content:"Analiza ("+meal+"): "+text}], 1500);
       }
-      const json = JSON.parse(resp.replace(/```json|```/g,"").trim());
+      // Robust JSON extraction - find the first { and last }
+      let jsonStr = resp.replace(/```json|```/g,"").trim();
+      const firstBrace = jsonStr.indexOf("{");
+      const lastBrace = jsonStr.lastIndexOf("}");
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        jsonStr = jsonStr.substring(firstBrace, lastBrace+1);
+      }
+      const json = JSON.parse(jsonStr);
       setParsed({...json,meal,originalText:inputMode==="photo"?(text.trim()||(photos.length>1?photos.length+" fotos":"Foto del plato")):text,hasPhoto:inputMode==="photo",photoCount:photos.length});
     } catch(e) {
-      setError("No pude analizar. Intenta de nuevo o sé más específico.");
+      console.error("Food analyze error:", e, "Response:", resp);
+      setError("No pude analizar. Detalle: "+e.message.slice(0,100)+". Intenta de nuevo.");
     }
     setLoading(false);
   };
