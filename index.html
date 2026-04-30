@@ -170,6 +170,38 @@ TIP: [consejo]`;
 const CHAT_PROMPT = (prof) => prof + `
 Eres coach experto: nutriologo + entrenador. Max 3 parrafos. Si pregunta medico delicado, recomienda consultar medico. Conoces el historial del usuario, usa esa informacion para dar respuestas personalizadas y hacer seguimiento.`;
 
+const DAILY_MENU_PROMPT = (prof) => prof + `
+
+Genera un MENÚ COMPLETO del día (desayuno, comida, cena, 1-2 snacks) que cumpla con TODAS estas reglas estrictas:
+
+1. SIN VERDURAS VISIBLES — el usuario NO COME verduras. Si una receta lleva verduras, deben ir LICUADAS, RALLADAS u OCULTAS sin que se sientan. Sin ensaladas. Sin verduras al vapor. Sin verduras a la plancha.
+2. SIN SALMÓN — no le gusta.
+3. Calorías totales acordes a la meta de bajar de peso (deficit moderado).
+4. Alta proteína (mínimo 130g/día para mantener masa magra).
+5. Carbos moderados, grasas buenas, fibra alta.
+6. Comidas reales, sabrosas, mexicanas/familiares — nada de "ensaladas tristes".
+7. La cocinera de su casa puede prepararlo — NO usar Thermomix.
+
+Devuelve SOLO un JSON válido (sin markdown) con esta estructura:
+{
+  "summary": "Frase corta describiendo el día (ej: 'Día alto en proteína con sabores familiares y verduras escondidas en salsas')",
+  "meals": [
+    {
+      "type": "Desayuno",
+      "emoji": "☀",
+      "name": "Nombre del platillo",
+      "description": "1 oración describiendo qué es y por qué es buena opción",
+      "kcal": 380,
+      "protein": 28,
+      "carbs": 35,
+      "fat": 12,
+      "highlight": "Por qué es estratégico hoy (ej: 'Te arranca el día con proteína')"
+    }
+  ],
+  "totals": {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0},
+  "tips": ["3 tips concretos para el día, cada uno breve"]
+}`;
+
 const WEEKLY_REPORT_PROMPT = (prof) => prof + `
 
 Genera un REPORTE SEMANAL completo de salud para el usuario basado en sus datos de los últimos 7 días.
@@ -208,6 +240,343 @@ Formato: lista corta con viñetas. Si no hay nada relevante, responde solo "NADA
 
 const DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 const MEAL_ICONS = {desayuno:"☀",almuerzo:"◐",cena:"☾",snack:"◇"};
+const RECIPES = [
+  {
+    id:"r01",
+    name:"Spaghetti boloñesa con verduras escondidas",
+    emoji:"🍝",
+    category:"comida",
+    time:"30 min",
+    kcal:480,
+    difficulty:"Fácil",
+    hidden:["zanahoria","apio","calabacita","espinaca"],
+    benefits:["Alta proteína","Fibra escondida","Carbos lentos"],
+    description:"Pasta clásica donde la salsa lleva 5 verduras licuadas. No las ves, no las pruebas. Sabe a boloñesa de la abuela.",
+    ingredients:[
+      "200g de carne molida 90% magra",
+      "200g de pasta integral",
+      "2 jitomates grandes maduros",
+      "1 zanahoria mediana",
+      "1 rama de apio",
+      "1/2 calabacita",
+      "1 puño de espinaca baby",
+      "1/2 cebolla blanca",
+      "2 dientes de ajo",
+      "1 cda aceite de oliva",
+      "Sal, pimienta, orégano, albahaca",
+      "Queso parmesano para servir"
+    ],
+    steps:[
+      "Pon a hervir agua con sal para la pasta",
+      "En la licuadora pon: jitomate, zanahoria, apio, calabacita, espinaca, ajo, cebolla. Licúa 1 min hasta que quede salsa roja sin grumos.",
+      "Sofríe la carne en una sartén con aceite hasta dorar (5 min)",
+      "Agrega la salsa licuada a la carne. Sazona con sal, pimienta, orégano, albahaca",
+      "Cocina a fuego medio 15-20 min hasta que espese",
+      "Hierve la pasta al dente según el paquete",
+      "Sirve la pasta con la salsa encima y parmesano rallado"
+    ],
+    trick:"La zanahoria da dulzor natural, la espinaca da color profundo, el apio da sabor umami. Tu hijo de 10 nunca va a sospechar."
+  },
+  {
+    id:"r02",
+    name:"Hamburguesas jugosas con verdura oculta",
+    emoji:"🍔",
+    category:"comida",
+    time:"25 min",
+    kcal:520,
+    difficulty:"Fácil",
+    hidden:["calabacita","cebolla","espinaca"],
+    benefits:["Proteína completa","Más jugosa que normal","Fibra"],
+    description:"Hamburguesas que llevan calabacita rallada — las hace más jugosas y mete fibra sin que se note. Sabe a hamburguesa normal pero mejor.",
+    ingredients:[
+      "300g carne molida res 80/20",
+      "1/2 calabacita rallada y exprimida",
+      "1/4 cebolla picada finita",
+      "1 puño de espinaca picada muy finita",
+      "1 huevo",
+      "2 cdas pan molido",
+      "1 cdita salsa inglesa",
+      "Sal, pimienta, ajo en polvo, paprika",
+      "2 panes integrales",
+      "Lechuga, jitomate, cebolla, mostaza, mayonesa light"
+    ],
+    steps:[
+      "Ralla la calabacita y exprímela bien con las manos para sacar el agua (importante)",
+      "Mezcla en un bowl: carne, calabacita exprimida, cebolla, espinaca, huevo, pan molido, salsa inglesa, especias",
+      "Forma 2 hamburguesas gruesas. No las aplanes mucho.",
+      "Calienta sartén o plancha a fuego alto. Sin aceite si es antiadherente.",
+      "Cocina 4 min de un lado, voltea, 4 min del otro lado",
+      "Tuesta los panes ligeramente",
+      "Arma con lechuga, jitomate y tu salsa favorita"
+    ],
+    trick:"La calabacita rallada y exprimida desaparece dentro de la carne. Solo queda más jugosa. Funciona igual con zanahoria rallada."
+  },
+  {
+    id:"r03",
+    name:"Crema de zanahoria estilo restaurante",
+    emoji:"🥕",
+    category:"comida",
+    time:"30 min",
+    kcal:220,
+    difficulty:"Fácil",
+    hidden:["zanahoria","apio","cebolla","ajo"],
+    benefits:["Vitamina A","Antioxidantes","Saciante"],
+    description:"Crema sedosa, dulce natural, con un toque de jengibre. Sabe a sopa de restaurante caro. Sin sabor a 'verdura'.",
+    ingredients:[
+      "6 zanahorias grandes peladas y en cubos",
+      "1 cebolla blanca picada",
+      "2 dientes de ajo",
+      "1 papa pequeña (para textura)",
+      "1 cm de jengibre fresco",
+      "1L caldo de pollo",
+      "100ml leche evaporada light",
+      "1 cda aceite de oliva",
+      "Sal, pimienta blanca, nuez moscada",
+      "Crocantes de pan tostado para servir"
+    ],
+    steps:[
+      "Sofríe cebolla y ajo en aceite a fuego medio 3 min",
+      "Agrega zanahoria, papa y jengibre. Cocina 5 min",
+      "Añade caldo de pollo, sal y pimienta. Hierve 20 min hasta que zanahoria esté blandita",
+      "Pasa todo a la licuadora. Licúa 1 min a velocidad máxima",
+      "Regresa a la olla, agrega leche evaporada y nuez moscada. Calienta 2 min",
+      "Sirve con crocantes de pan y pimienta recién molida"
+    ],
+    trick:"El jengibre y nuez moscada disfrazan el sabor a verdura. La papa da textura cremosa sin necesidad de mucha crema."
+  },
+  {
+    id:"r04",
+    name:"Pancakes proteicos con plátano",
+    emoji:"🥞",
+    category:"desayuno",
+    time:"15 min",
+    kcal:380,
+    difficulty:"Fácil",
+    hidden:[],
+    benefits:["Alta proteína","Sin azúcar","Saciante"],
+    description:"Hot cakes esponjosos con sabor a plátano y avena. Mucha proteína, cero azúcar añadida. Mejor que los de la cafetería.",
+    ingredients:[
+      "1 plátano maduro",
+      "2 huevos",
+      "1/2 taza avena en hojuelas",
+      "1 scoop proteína whey vainilla",
+      "1/2 cdita polvo para hornear",
+      "1 cdita canela",
+      "1/4 cdita esencia de vainilla",
+      "Mantequilla o spray para sartén",
+      "Para servir: berries, mantequilla de almendra, miel de agave"
+    ],
+    steps:[
+      "Licúa todo en licuadora: plátano, huevos, avena, proteína, polvo para hornear, canela, vainilla. 1 min hasta que quede mezcla suave.",
+      "Reposa 5 min para que se hidrate la avena",
+      "Calienta sartén antiadherente a fuego medio-bajo",
+      "Vierte porciones de 1/4 taza por pancake. Cuece 2 min hasta que salgan burbujas",
+      "Voltea con cuidado, cuece 1.5 min del otro lado",
+      "Sirve con berries y un toque de miel de agave"
+    ],
+    trick:"El plátano da dulzor natural, no necesitas azúcar. La proteína whey los hace esponjosos y te da 30g de proteína en el desayuno."
+  },
+  {
+    id:"r05",
+    name:"Lasaña con carne y vegetales licuados",
+    emoji:"🥘",
+    category:"comida",
+    time:"60 min",
+    kcal:550,
+    difficulty:"Media",
+    hidden:["espinaca","zanahoria","jitomate","calabacita"],
+    benefits:["Comida completa","4 verduras escondidas","Proteína"],
+    description:"Lasaña tradicional pero la salsa lleva todas las verduras licuadas. Tu hijo va a pedir repetir.",
+    ingredients:[
+      "9 láminas de pasta para lasaña",
+      "400g carne molida res",
+      "4 jitomates",
+      "2 zanahorias",
+      "1 calabacita",
+      "2 puños espinaca",
+      "1/2 cebolla",
+      "3 dientes de ajo",
+      "300g queso ricotta o cottage light",
+      "200g mozzarella rallada",
+      "50g parmesano",
+      "Albahaca, orégano, sal, pimienta"
+    ],
+    steps:[
+      "Licúa en licuadora: jitomate, zanahoria, calabacita, espinaca, cebolla, ajo. Queda salsa roja",
+      "Sofríe la carne molida 5 min, agrega la salsa licuada y especias. Cocina 20 min",
+      "Hierve las láminas de pasta según paquete. Escurre",
+      "En refractario: capa de salsa, capa de pasta, capa de ricotta, capa de mozzarella. Repite 3 veces.",
+      "Termina con mozzarella y parmesano arriba",
+      "Hornea a 180°C por 30 min hasta dorar"
+    ],
+    trick:"4 verduras desaparecen en la salsa. Sabe a lasaña italiana de restaurante."
+  },
+  {
+    id:"r06",
+    name:"Smoothie verde que sabe a postre",
+    emoji:"🥤",
+    category:"snack",
+    time:"5 min",
+    kcal:280,
+    difficulty:"Fácil",
+    hidden:["espinaca","aguacate"],
+    benefits:["Antioxidantes","Grasas buenas","Saciante"],
+    description:"Espinaca + aguacate dentro de un smoothie que sabe a piña colada. No miente — el sabor a fruta tropical gana.",
+    ingredients:[
+      "1 puño de espinaca baby",
+      "1/4 aguacate maduro",
+      "1/2 plátano congelado",
+      "1/2 taza piña en cubos",
+      "1 taza leche de almendra sin azúcar",
+      "1 scoop proteína vainilla",
+      "1 cdita coco rallado",
+      "Hielo al gusto"
+    ],
+    steps:[
+      "Pon todo en licuadora",
+      "Licúa 1 min a velocidad alta hasta que esté súper cremoso",
+      "Sirve frío"
+    ],
+    trick:"La piña enmascara totalmente la espinaca. El aguacate da cremosidad sin sabor. Es como una piña colada saludable."
+  },
+  {
+    id:"r07",
+    name:"Albóndigas en chipotle con salsa secreta",
+    emoji:"🍲",
+    category:"comida",
+    time:"40 min",
+    kcal:420,
+    difficulty:"Media",
+    hidden:["zanahoria","calabacita","cebolla"],
+    benefits:["Proteína alta","Picante saludable","Comfort food"],
+    description:"Albóndigas mexicanas en salsa de chipotle. La carne lleva calabacita rallada (no se ve), la salsa lleva zanahoria.",
+    ingredients:[
+      "400g carne molida (mitad res, mitad cerdo)",
+      "1/2 calabacita rallada exprimida",
+      "1/4 cebolla picada finita",
+      "1 huevo",
+      "2 cdas arroz crudo",
+      "Sal y pimienta",
+      "PARA LA SALSA:",
+      "4 jitomates",
+      "1 zanahoria",
+      "1 cebolla",
+      "2 chipotles en adobo",
+      "1 ajo",
+      "Caldo de pollo, sal, comino"
+    ],
+    steps:[
+      "Mezcla la carne con calabacita, cebolla, huevo, arroz, sal y pimienta. Forma 16 albóndigas.",
+      "Licúa la salsa: jitomate, zanahoria, cebolla, chipotle, ajo, caldo, especias",
+      "Vierte la salsa en una olla. Hierve 5 min",
+      "Agrega las albóndigas. Tapa y cocina 25 min a fuego medio-bajo",
+      "Sirve con arroz blanco"
+    ],
+    trick:"El chipotle disfraza cualquier sabor 'verdoso'. El comino refuerza el sabor mexicano."
+  },
+  {
+    id:"r08",
+    name:"Pizza saludable de masa de coliflor",
+    emoji:"🍕",
+    category:"cena",
+    time:"35 min",
+    kcal:380,
+    difficulty:"Media",
+    hidden:["coliflor"],
+    benefits:["Sin gluten","Bajo carbo","Alta proteína"],
+    description:"Pizza con masa de coliflor que NO sabe a coliflor. El queso y especias dominan. Crujiente como pizza normal.",
+    ingredients:[
+      "1 coliflor mediana (sale 2 tazas rallada)",
+      "1 huevo",
+      "1/2 taza mozzarella rallada",
+      "1/4 taza parmesano",
+      "1 cdita orégano",
+      "Sal y ajo en polvo",
+      "PARA TOPPINGS:",
+      "Salsa de tomate",
+      "Mozzarella extra",
+      "Pollo desmenuzado o pepperoni light",
+      "Albahaca fresca"
+    ],
+    steps:[
+      "Ralla la coliflor en procesador o con rallador manual hasta que quede como arroz",
+      "Mete al microondas 5 min. Cuando enfríe, exprime con un trapo TODA el agua (paso clave)",
+      "Mezcla con huevo, quesos, orégano, sal, ajo. Forma una masa.",
+      "Extiende sobre papel para horno formando una pizza de 25cm",
+      "Hornea a 220°C por 15 min hasta dorar",
+      "Saca, agrega salsa, queso, toppings. Hornea 8 min más"
+    ],
+    trick:"Exprimir BIEN el agua de la coliflor es lo más importante. Si queda húmeda, sabe a coliflor. Si la secas bien, sabe a pizza normal."
+  },
+  {
+    id:"r09",
+    name:"Brownies con frijol negro",
+    emoji:"🍫",
+    category:"snack",
+    time:"40 min",
+    kcal:180,
+    difficulty:"Fácil",
+    hidden:["frijol negro"],
+    benefits:["Proteína","Fibra alta","Sin harina"],
+    description:"Brownies fudgy súper chocolatosos. Llevan frijol negro en lugar de harina. NADIE detecta el frijol. En serio.",
+    ingredients:[
+      "1 lata de frijoles negros (escurridos y enjuagados)",
+      "3 huevos",
+      "1/3 taza cocoa sin azúcar",
+      "1/3 taza miel de agave o maple",
+      "1/4 taza aceite de coco derretido",
+      "1 cdita esencia de vainilla",
+      "1/2 cdita polvo para hornear",
+      "Pizca de sal",
+      "1/2 taza chispas chocolate amargo"
+    ],
+    steps:[
+      "Precalienta horno a 180°C",
+      "En licuadora: procesa los frijoles bien escurridos hasta puré",
+      "Agrega huevos, cocoa, agave, aceite, vainilla, polvo para hornear, sal. Licúa 30 seg",
+      "Incorpora chispas con espátula",
+      "Vierte en molde 20×20cm engrasado",
+      "Hornea 25-28 min. Deja enfriar antes de cortar"
+    ],
+    trick:"El cocoa amargo y el chocolate dominan completamente. Sirve fríos. La textura es fudgy, idéntica a brownies normales."
+  },
+  {
+    id:"r10",
+    name:"Pollo cremoso con espinaca oculta",
+    emoji:"🍗",
+    category:"comida",
+    time:"25 min",
+    kcal:440,
+    difficulty:"Fácil",
+    hidden:["espinaca","champiñón"],
+    benefits:["Alta proteína","Hierro","Cremoso"],
+    description:"Pollo en salsa cremosa estilo Toscana. La salsa va licuada con espinaca y champiñones. Sabe a restaurante italiano.",
+    ingredients:[
+      "2 pechugas de pollo en filetes",
+      "2 puños espinaca baby",
+      "100g champiñones",
+      "1/2 cebolla",
+      "2 ajos",
+      "200ml crema light",
+      "100ml caldo pollo",
+      "1/4 taza parmesano",
+      "1 cda aceite oliva",
+      "Sal, pimienta, paprika, tomillo",
+      "Para servir: pasta o arroz"
+    ],
+    steps:[
+      "Sazona el pollo con sal, pimienta, paprika. Sella en sartén con aceite 4 min por lado. Reserva.",
+      "En la misma sartén sofríe cebolla y ajo 2 min",
+      "Agrega espinaca y champiñones. Cocina 4 min hasta que reduzcan",
+      "Pasa todo a la licuadora con caldo de pollo. Licúa 30 seg a velocidad alta",
+      "Regresa a la sartén. Agrega crema y parmesano. Hierve 3 min",
+      "Regresa el pollo a la sartén con la salsa. Cocina 5 min más",
+      "Sirve con pasta o arroz"
+    ],
+    trick:"Los champiñones licuados dan profundidad de sabor (umami). La espinaca se vuelve invisible al licuarla con la crema."
+  }
+];
+
 const FOOD_EMOJIS = {
   // Huevos y lácteos
   "huevo":"🥚","huevos":"🥚","huevo revuelto":"🍳","huevos revueltos":"🍳","huevo frito":"🍳","omelette":"🍳","tortilla de huevo":"🍳","leche":"🥛","yogurt":"🥛","queso":"🧀","mantequilla":"🧈","crema":"🥛","nata":"🥛",
@@ -905,6 +1274,9 @@ function App() {
   const cameraInputRef = React.useRef(null);
   const [exCtx,setExCtx] = React.useState("");
   const [macroDetail,setMacroDetail] = React.useState(null);
+  const [showRecipe,setShowRecipe] = React.useState(null);
+  const [dailyMenu,setDailyMenu] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_daily_menu"))||null; } catch(e){return null;} });
+  const [generatingMenu,setGeneratingMenu] = React.useState(false);
   const [waterLog,setWaterLog] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_water_log"))||{}; } catch(e){return {};} });
   const [weeklyReport,setWeeklyReport] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_weekly_report"))||null; } catch(e){return null;} });
   const [generatingReport,setGeneratingReport] = React.useState(false);
@@ -927,6 +1299,7 @@ function App() {
   React.useEffect(()=>{ localStorage.setItem("mc_coach_memory",JSON.stringify(coachMemory)); },[coachMemory]);
   React.useEffect(()=>{ if(weeklyReport) localStorage.setItem("mc_weekly_report",JSON.stringify(weeklyReport)); },[weeklyReport]);
   React.useEffect(()=>{ localStorage.setItem("mc_water_log",JSON.stringify(waterLog)); },[waterLog]);
+  React.useEffect(()=>{ if(dailyMenu) localStorage.setItem("mc_daily_menu",JSON.stringify(dailyMenu)); },[dailyMenu]);
   React.useEffect(()=>{ localStorage.setItem("mc_log",JSON.stringify(foodLog)); },[foodLog]);
   React.useEffect(()=>{ localStorage.setItem("mc_plans",JSON.stringify(planData)); },[planData]);
   React.useEffect(()=>{ if(tab==="chat") setTimeout(()=>cEnd.current&&cEnd.current.scrollIntoView({behavior:"smooth"}),80); },[chat,tab]);
@@ -1213,6 +1586,30 @@ AGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
     setWaterLog(prev => ({...prev, [k]: Math.max(0, (prev[k]||0) + ml)}));
   };
 
+  const generateDailyMenu = async () => {
+    if (!key) { setShowKey(true); return; }
+    setGeneratingMenu(true);
+    try {
+      const tg = macroTargets;
+      const ctx = `OBJETIVOS DEL DÍA: ${profData.target}kcal | Proteína ${tg.protein}g | Carbos ${tg.carbs}g | Grasas ${tg.fat}g | Fibra ${tg.fiber}g | Azúcar máx ${tg.sugar}g
+
+YA CONSUMIDO HOY: ${Math.round(todayTotals.kcal)}kcal | P:${Math.round(todayTotals.protein)}g | C:${Math.round(todayTotals.carbs)}g | G:${Math.round(todayTotals.fat)}g
+
+QUEDAN POR CONSUMIR: ${Math.max(0,profData.target-todayTotals.kcal)}kcal | P:${Math.max(0,tg.protein-todayTotals.protein)}g | C:${Math.max(0,tg.carbs-todayTotals.carbs)}g | G:${Math.max(0,tg.fat-todayTotals.fat)}g
+
+${todayEntries.length>0?"Comidas ya registradas: "+todayEntries.map(e=>e.meal+": "+e.originalText).join(" | "):"No ha comido nada aún hoy."}
+
+Genera el menú considerando lo que YA comió (no repetir) y completar lo que falta.`;
+
+      const response = await api(key, DAILY_MENU_PROMPT(profData.profile), [{role:"user",content:ctx}], 2000);
+      const json = JSON.parse(response.replace(/```json|```/g,"").trim());
+      setDailyMenu({timestamp:Date.now(), date:todayKey(), ...json});
+    } catch(e) {
+      alert("No pude generar el menú: "+e.message);
+    }
+    setGeneratingMenu(false);
+  };
+
   const generateWeeklyReport = async () => {
     if (!key) { setShowKey(true); return; }
     setGeneratingReport(true);
@@ -1302,6 +1699,7 @@ Genera el reporte semanal según las instrucciones.`;
     ["today","Hoy"],
     ["history","Historial"],
     ["plan","Plan"],
+    ["recetas","Recetas"],
     ["ejercicio","Ejercicio"],
     ["chat","Coach"]
   ];
@@ -1394,6 +1792,88 @@ Genera el reporte semanal según las instrucciones.`;
             </div>
             {todayWater>=waterGoal*1000 && (
               <div style={{marginTop:10,padding:"8px 12px",background:"var(--mint-soft)",borderRadius:10,fontSize:12,color:"var(--mint-deep)",fontWeight:700,textAlign:"center"}}>✓ Meta de agua alcanzada 🎉</div>
+            )}
+          </div>
+
+          {/* DAILY MENU SUGGESTION */}
+          <div style={{...card,padding:0,overflow:"hidden"}}>
+            <div style={{padding:"14px 18px",borderBottom:dailyMenu && dailyMenu.date===todayKey()?"1px solid var(--line)":"none",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:34,height:34,borderRadius:11,background:"linear-gradient(135deg,var(--mint),var(--primary))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🍽️</div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:"var(--ink)"}}>Menú del día</div>
+                  <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:500}}>Sugerido para tu meta</div>
+                </div>
+              </div>
+              <button onClick={generateDailyMenu} disabled={generatingMenu} style={{background:"var(--bg-sunken)",border:"1px solid var(--line)",borderRadius:10,padding:"6px 12px",color:"var(--primary)",fontSize:11,fontWeight:700,cursor:generatingMenu?"wait":"pointer",letterSpacing:0.3,WebkitTapHighlightColor:"transparent"}}>
+                {generatingMenu?"...":dailyMenu && dailyMenu.date===todayKey()?"↻ Otro":"Generar"}
+              </button>
+            </div>
+
+            {generatingMenu && (
+              <div style={{padding:"30px 20px",textAlign:"center"}}>
+                <Dots/>
+                <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:10,fontWeight:500}}>Diseñando tu menú del día…</div>
+              </div>
+            )}
+
+            {!generatingMenu && dailyMenu && dailyMenu.date===todayKey() && (
+              <div style={{padding:"4px 18px 16px"}}>
+                {dailyMenu.summary && (
+                  <div style={{fontSize:13,color:"var(--ink-soft)",fontStyle:"italic",lineHeight:1.5,padding:"12px 0",borderBottom:"1px solid var(--line)"}}>"{dailyMenu.summary}"</div>
+                )}
+
+                {dailyMenu.meals && dailyMenu.meals.map((m,i)=>(
+                  <div key={i} style={{padding:"14px 0",borderBottom:i<dailyMenu.meals.length-1?"1px solid var(--line)":"none"}}>
+                    <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                      <div style={{width:38,height:38,borderRadius:11,background:"var(--bg-sunken)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{m.emoji||"🍽️"}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:10,color:"var(--primary-deep)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase"}}>{m.type}</div>
+                        <div style={{fontSize:14,color:"var(--ink)",fontWeight:700,marginTop:2,lineHeight:1.3}}>{m.name}</div>
+                        {m.description && <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:4,lineHeight:1.4}}>{m.description}</div>}
+                        <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                          <span style={{fontSize:10,color:"var(--primary-deep)",background:"var(--primary-soft)",padding:"2px 7px",borderRadius:6,fontWeight:700}}>{m.kcal}kcal</span>
+                          <span style={{fontSize:10,color:"var(--mint-deep)",background:"var(--mint-soft)",padding:"2px 7px",borderRadius:6,fontWeight:700}}>P {m.protein}g</span>
+                          <span style={{fontSize:10,color:"var(--ink-soft)",background:"var(--bg-sunken)",padding:"2px 7px",borderRadius:6,fontWeight:600}}>C {m.carbs}g</span>
+                          <span style={{fontSize:10,color:"var(--ink-soft)",background:"var(--bg-sunken)",padding:"2px 7px",borderRadius:6,fontWeight:600}}>G {m.fat}g</span>
+                        </div>
+                        {m.highlight && (
+                          <div style={{fontSize:11,color:"var(--mint-deep)",marginTop:8,fontWeight:600,fontStyle:"italic"}}>💡 {m.highlight}</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {dailyMenu.totals && (
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginTop:14,padding:"14px 0 0",borderTop:"1px solid var(--line)"}}>
+                    <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>Total</div><div style={{fontSize:16,color:"var(--primary)",fontWeight:800,marginTop:3}}>{dailyMenu.totals.kcal}<span style={{fontSize:9,color:"var(--ink-mute)"}}>kcal</span></div></div>
+                    <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>Prot</div><div style={{fontSize:16,color:"var(--mint-deep)",fontWeight:800,marginTop:3}}>{dailyMenu.totals.protein}<span style={{fontSize:9,color:"var(--ink-mute)"}}>g</span></div></div>
+                    <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>Carb</div><div style={{fontSize:16,color:"var(--ink)",fontWeight:800,marginTop:3}}>{dailyMenu.totals.carbs}<span style={{fontSize:9,color:"var(--ink-mute)"}}>g</span></div></div>
+                    <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>Gras</div><div style={{fontSize:16,color:"var(--ink)",fontWeight:800,marginTop:3}}>{dailyMenu.totals.fat}<span style={{fontSize:9,color:"var(--ink-mute)"}}>g</span></div></div>
+                  </div>
+                )}
+
+                {dailyMenu.tips && dailyMenu.tips.length>0 && (
+                  <div style={{marginTop:16,padding:"14px 16px",background:"linear-gradient(135deg,rgba(245,158,11,0.06),rgba(245,158,11,0.02))",border:"1px solid rgba(245,158,11,0.18)",borderRadius:14}}>
+                    <div style={{fontSize:10,color:"#d97706",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:8}}>💡 Tips de hoy</div>
+                    {dailyMenu.tips.map((t,i)=>(
+                      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"4px 0"}}>
+                        <div style={{width:5,height:5,borderRadius:"50%",background:"#d97706",marginTop:8,flexShrink:0}}/>
+                        <div style={{flex:1,fontSize:13,color:"var(--ink)",lineHeight:1.5}}>{t}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!generatingMenu && (!dailyMenu || dailyMenu.date!==todayKey()) && (
+              <div style={{padding:"22px 20px",textAlign:"center"}}>
+                <div style={{fontSize:32,marginBottom:8}}>🍳</div>
+                <div style={{fontSize:13,color:"var(--ink)",fontWeight:600,marginBottom:4}}>Tu menú personalizado</div>
+                <div style={{fontSize:11,color:"var(--ink-mute)",lineHeight:1.5,maxWidth:300,margin:"0 auto"}}>Toca "Generar" para que la IA arme un menú completo basado en tus metas, lo que comiste hoy y tus preferencias.</div>
+              </div>
             )}
           </div>
 
@@ -1661,6 +2141,122 @@ Genera el reporte semanal según las instrucciones.`;
           {!dayPlan.el && dayPlan.er && (
             <div style={{...card,borderLeft:"3px solid var(--mint)",lineHeight:1.85,fontSize:14,whiteSpace:"pre-wrap",color:"var(--ink)"}}>{dayPlan.er}</div>
           )}
+        </div>
+      )}
+
+      {/* TAB: RECETAS */}
+      {tab==="recetas" && (
+        <div className="fade" style={{padding:"4px 20px 100px",maxWidth:640,margin:"0 auto",display:"flex",flexDirection:"column",gap:14}}>
+
+          <div style={{padding:"14px 18px",background:"linear-gradient(135deg,rgba(8,145,178,0.08),rgba(16,185,129,0.06))",border:"1px solid var(--line)",borderRadius:18,display:"flex",alignItems:"center",gap:14}}>
+            <div style={{fontSize:30}}>👨‍🍳</div>
+            <div style={{flex:1}}>
+              <div className="serif" style={{fontSize:22,color:"var(--ink)",lineHeight:1.1}}>Recetas inteligentes</div>
+              <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:4,lineHeight:1.4,fontWeight:500}}>Comida rica con verduras escondidas. Pensado para tu meta.</div>
+            </div>
+          </div>
+
+          {!showRecipe && (
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {RECIPES.map(r => (
+                <button key={r.id} type="button" onClick={()=>setShowRecipe(r.id)} style={{padding:0,background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:18,cursor:"pointer",overflow:"hidden",textAlign:"left",WebkitTapHighlightColor:"transparent",touchAction:"manipulation",display:"flex",flexDirection:"column"}}>
+                  <div style={{height:96,background:"linear-gradient(135deg,var(--bg-sunken),var(--mint-soft))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:48}}>{r.emoji}</div>
+                  <div style={{padding:"12px 14px",flex:1,display:"flex",flexDirection:"column",gap:6}}>
+                    <div style={{fontSize:13,color:"var(--ink)",fontWeight:700,lineHeight:1.25,minHeight:32}}>{r.name}</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
+                      <span style={{fontSize:10,color:"var(--primary-deep)",background:"var(--primary-soft)",padding:"2px 7px",borderRadius:6,fontWeight:700}}>{r.kcal}kcal</span>
+                      <span style={{fontSize:10,color:"var(--ink-mute)",background:"var(--bg-sunken)",padding:"2px 7px",borderRadius:6,fontWeight:600}}>⏱ {r.time}</span>
+                    </div>
+                    {r.hidden && r.hidden.length>0 && (
+                      <div style={{fontSize:10,color:"var(--mint-deep)",fontWeight:600,marginTop:2}}>🥷 Esconde {r.hidden.length} {r.hidden.length===1?"verdura":"verduras"}</div>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {showRecipe && (() => {
+            const r = RECIPES.find(x=>x.id===showRecipe);
+            if (!r) return null;
+            return (
+              <div className="fade" style={{display:"flex",flexDirection:"column",gap:14}}>
+
+                <button type="button" onClick={()=>setShowRecipe(null)} style={{display:"flex",alignItems:"center",gap:8,background:"transparent",border:"none",color:"var(--primary)",fontSize:13,fontWeight:700,cursor:"pointer",padding:"4px 0",WebkitTapHighlightColor:"transparent"}}>← Todas las recetas</button>
+
+                <div style={{background:"linear-gradient(135deg,var(--bg-sunken),var(--mint-soft))",borderRadius:24,padding:"40px 20px",textAlign:"center",border:"1px solid var(--line)"}}>
+                  <div style={{fontSize:80,lineHeight:1,marginBottom:14}}>{r.emoji}</div>
+                  <div className="serif" style={{fontSize:26,color:"var(--ink)",lineHeight:1.15,padding:"0 10px"}}>{r.name}</div>
+                </div>
+
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                  <div style={{padding:"12px 8px",background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:14,textAlign:"center"}}>
+                    <div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>Tiempo</div>
+                    <div style={{fontSize:13,color:"var(--ink)",fontWeight:800,marginTop:4}}>{r.time}</div>
+                  </div>
+                  <div style={{padding:"12px 8px",background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:14,textAlign:"center"}}>
+                    <div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>Calorías</div>
+                    <div style={{fontSize:13,color:"var(--primary)",fontWeight:800,marginTop:4}}>{r.kcal}</div>
+                  </div>
+                  <div style={{padding:"12px 8px",background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:14,textAlign:"center"}}>
+                    <div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>Dificultad</div>
+                    <div style={{fontSize:13,color:"var(--ink)",fontWeight:800,marginTop:4}}>{r.difficulty}</div>
+                  </div>
+                </div>
+
+                {r.hidden && r.hidden.length>0 && (
+                  <div style={{padding:"14px 18px",background:"linear-gradient(135deg,rgba(16,185,129,0.08),rgba(8,145,178,0.05))",border:"1px solid var(--mint-soft)",borderRadius:16}}>
+                    <div style={{fontSize:11,color:"var(--mint-deep)",fontWeight:800,letterSpacing:1.2,textTransform:"uppercase",marginBottom:6}}>🥷 Verduras escondidas</div>
+                    <div style={{fontSize:13,color:"var(--ink)",fontWeight:600,lineHeight:1.5}}>{r.hidden.join(" · ")}</div>
+                  </div>
+                )}
+
+                <div style={{padding:"16px 18px",background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:16}}>
+                  <div style={{fontSize:14,color:"var(--ink-soft)",lineHeight:1.6,fontStyle:"italic"}}>"{r.description}"</div>
+                </div>
+
+                <div>
+                  <div style={{fontSize:11,color:"var(--ink-mute)",letterSpacing:1.5,fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Ingredientes</div>
+                  <div style={{background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:16,overflow:"hidden"}}>
+                    {r.ingredients.map((ing,i)=>(
+                      <div key={i} style={{padding:"10px 16px",borderBottom:i<r.ingredients.length-1?"1px solid var(--line)":"none",fontSize:13,color:"var(--ink)",display:"flex",alignItems:"center",gap:10}}>
+                        {ing.toUpperCase()===ing && ing.length>5 ? (
+                          <div style={{fontSize:11,color:"var(--primary-deep)",fontWeight:800,letterSpacing:1,textTransform:"uppercase"}}>{ing.replace(":","")}</div>
+                        ) : (
+                          <>
+                            <div style={{width:6,height:6,borderRadius:"50%",background:"var(--mint)",flexShrink:0}}/>
+                            <div style={{flex:1,lineHeight:1.5}}>{ing}</div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{fontSize:11,color:"var(--ink-mute)",letterSpacing:1.5,fontWeight:700,textTransform:"uppercase",marginBottom:10}}>Preparación</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {r.steps.map((step,i)=>(
+                      <div key={i} style={{background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:14,padding:"14px 16px",display:"flex",gap:12,alignItems:"flex-start"}}>
+                        <div style={{width:28,height:28,borderRadius:"50%",background:"linear-gradient(135deg,var(--primary),var(--mint))",color:"#fff",fontSize:12,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 2px 6px -2px rgba(8,145,178,0.4)"}}>{i+1}</div>
+                        <div style={{flex:1,fontSize:13,color:"var(--ink)",lineHeight:1.55,paddingTop:4}}>{step}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {r.trick && (
+                  <div style={{padding:"16px 18px",background:"linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.04))",border:"1px solid rgba(245,158,11,0.2)",borderRadius:16}}>
+                    <div style={{fontSize:11,color:"#d97706",fontWeight:800,letterSpacing:1.2,textTransform:"uppercase",marginBottom:6}}>💡 Truco del chef</div>
+                    <div style={{fontSize:13,color:"var(--ink)",lineHeight:1.6}}>{r.trick}</div>
+                  </div>
+                )}
+
+                <button type="button" onClick={()=>setShowRecipe(null)} style={{width:"100%",padding:16,marginTop:8,background:"linear-gradient(135deg,var(--primary),var(--mint))",border:"none",borderRadius:16,color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",letterSpacing:0.3,boxShadow:"0 8px 24px -8px rgba(8,145,178,0.4)",WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>← Volver a recetas</button>
+              </div>
+            );
+          })()}
+
         </div>
       )}
 
