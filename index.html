@@ -2018,6 +2018,167 @@ function fileToBase64(file) {
   });
 }
 
+// ─── AUDIO SYSTEM ─────────────────────────────────────────────────────
+let audioCtx = null;
+let bgMusicNode = null;
+let bgMusicGain = null;
+let bgMusicOscillators = [];
+
+const getAudioCtx = () => {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch(e) {}
+  }
+  if (audioCtx && audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  return audioCtx;
+};
+
+const soundEnabled = () => {
+  try { return JSON.parse(localStorage.getItem("mc_sound_enabled") ?? "true"); } catch(e) { return true; }
+};
+
+const musicEnabled = () => {
+  try { return JSON.parse(localStorage.getItem("mc_music_enabled") ?? "false"); } catch(e) { return false; }
+};
+
+// Synthesized blip sounds
+const playSound = (type) => {
+  if (!soundEnabled()) return;
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+
+  if (type === "tap") {
+    // Soft tap blip
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(800, now);
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    osc.start(now); osc.stop(now + 0.1);
+  } else if (type === "save") {
+    // Two-note rising chime
+    [523.25, 783.99].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now + i*0.08);
+      gain.gain.setValueAtTime(0, now + i*0.08);
+      gain.gain.linearRampToValueAtTime(0.12, now + i*0.08 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i*0.08 + 0.25);
+      osc.start(now + i*0.08); osc.stop(now + i*0.08 + 0.3);
+    });
+  } else if (type === "water") {
+    // Water drop
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1200, now);
+    osc.frequency.exponentialRampToValueAtTime(400, now + 0.15);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    osc.start(now); osc.stop(now + 0.22);
+  } else if (type === "achievement") {
+    // Triumph chord
+    [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(freq, now + i*0.05);
+      gain.gain.setValueAtTime(0, now + i*0.05);
+      gain.gain.linearRampToValueAtTime(0.1, now + i*0.05 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i*0.05 + 0.5);
+      osc.start(now + i*0.05); osc.stop(now + i*0.05 + 0.6);
+    });
+  } else if (type === "delete") {
+    // Soft descending
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(400, now);
+    osc.frequency.exponentialRampToValueAtTime(200, now + 0.15);
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    osc.start(now); osc.stop(now + 0.2);
+  }
+};
+
+// Ambient background music (pad-like, very chill)
+const startBgMusic = () => {
+  const ctx = getAudioCtx();
+  if (!ctx || bgMusicNode) return;
+
+  bgMusicGain = ctx.createGain();
+  bgMusicGain.gain.setValueAtTime(0, ctx.currentTime);
+  bgMusicGain.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 2); // gentle fade in
+  bgMusicGain.connect(ctx.destination);
+
+  // Lowpass filter for warmth
+  const filter = ctx.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.value = 800;
+  filter.Q.value = 0.7;
+  filter.connect(bgMusicGain);
+
+  // Soft pad chord (Cmaj9-ish)
+  const notes = [130.81, 164.81, 196.00, 246.94, 293.66]; // C3, E3, G3, B3, D4
+  bgMusicOscillators = notes.map((freq, i) => {
+    const osc = ctx.createOscillator();
+    osc.type = i % 2 === 0 ? "sine" : "triangle";
+    osc.frequency.value = freq;
+    // Very slight detune for richness
+    osc.detune.value = (Math.random() - 0.5) * 6;
+
+    const noteGain = ctx.createGain();
+    noteGain.gain.value = 0.3 / notes.length;
+
+    // Slow LFO for amplitude movement
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.1 + Math.random() * 0.15;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 0.15 / notes.length;
+    lfo.connect(lfoGain);
+    lfoGain.connect(noteGain.gain);
+    lfo.start();
+
+    osc.connect(noteGain);
+    noteGain.connect(filter);
+    osc.start();
+    return {osc, lfo, noteGain};
+  });
+
+  bgMusicNode = true;
+};
+
+const stopBgMusic = () => {
+  const ctx = getAudioCtx();
+  if (!ctx || !bgMusicNode) return;
+
+  if (bgMusicGain) {
+    bgMusicGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1);
+  }
+
+  setTimeout(() => {
+    bgMusicOscillators.forEach(({osc, lfo}) => {
+      try { osc.stop(); } catch(e){}
+      try { lfo.stop(); } catch(e){}
+    });
+    bgMusicOscillators = [];
+    bgMusicNode = null;
+    bgMusicGain = null;
+  }, 1100);
+};
+
 const todayKey = () => {
   const d = new Date();
   const y = d.getFullYear();
@@ -2616,6 +2777,72 @@ function App() {
   const [exCtx,setExCtx] = React.useState("");
   const [macroDetail,setMacroDetail] = React.useState(null);
   const [showRecipe,setShowRecipe] = React.useState(null);
+  const [soundOn,setSoundOn] = React.useState(()=>soundEnabled());
+  const [musicOn,setMusicOn] = React.useState(()=>musicEnabled());
+
+  React.useEffect(()=>{ localStorage.setItem("mc_sound_enabled", JSON.stringify(soundOn)); },[soundOn]);
+  React.useEffect(()=>{
+    localStorage.setItem("mc_music_enabled", JSON.stringify(musicOn));
+    if (musicOn) startBgMusic(); else stopBgMusic();
+  },[musicOn]);
+  // Register Service Worker for offline support and survival across app switches
+  React.useEffect(()=>{
+    if ("serviceWorker" in navigator) {
+      const swCode = `
+        const CACHE = "vita-v1";
+        self.addEventListener("install", e => {
+          self.skipWaiting();
+        });
+        self.addEventListener("activate", e => {
+          e.waitUntil(self.clients.claim());
+        });
+        self.addEventListener("fetch", e => {
+          const url = new URL(e.request.url);
+          // Don't cache API calls (always need fresh)
+          if (url.hostname === "api.anthropic.com") return;
+          // Network-first for HTML/JS, fallback to cache
+          if (e.request.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname === "/") {
+            e.respondWith(
+              fetch(e.request).then(resp => {
+                const copy = resp.clone();
+                caches.open(CACHE).then(c => c.put(e.request, copy));
+                return resp;
+              }).catch(() => caches.match(e.request).then(r => r || caches.match("/")))
+            );
+            return;
+          }
+          // Cache-first for other resources
+          e.respondWith(
+            caches.match(e.request).then(cached => cached || fetch(e.request).then(resp => {
+              if (resp.ok) {
+                const copy = resp.clone();
+                caches.open(CACHE).then(c => c.put(e.request, copy));
+              }
+              return resp;
+            }).catch(() => caches.match("/")))
+          );
+        });
+      `;
+      const blob = new Blob([swCode], {type:"application/javascript"});
+      const swUrl = URL.createObjectURL(blob);
+      navigator.serviceWorker.register(swUrl).catch(()=>{});
+    }
+  },[]);
+
+  React.useEffect(()=>{
+    // On mount, if music was on, start it (requires user interaction first per browser policy)
+    const handleFirstInteraction = () => {
+      if (musicEnabled()) startBgMusic();
+      document.removeEventListener("click", handleFirstInteraction);
+      document.removeEventListener("touchstart", handleFirstInteraction);
+    };
+    document.addEventListener("click", handleFirstInteraction);
+    document.addEventListener("touchstart", handleFirstInteraction);
+    return () => {
+      document.removeEventListener("click", handleFirstInteraction);
+      document.removeEventListener("touchstart", handleFirstInteraction);
+    };
+  },[]);
   const [recipeCategory,setRecipeCategory] = React.useState("desayuno");
   const [dailyMenu,setDailyMenu] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_daily_menu"))||null; } catch(e){return null;} });
   const [generatingMenu,setGeneratingMenu] = React.useState(false);
@@ -2674,9 +2901,11 @@ function App() {
   const saveFoodEntry = (entry) => {
     setFoodLog(prev=>({...prev,[selectedDate]:[...(prev[selectedDate]||[]),entry]}));
     setShowFoodModal(false);
+    playSound("save");
   };
   const deleteFoodEntry = (id) => {
     setFoodLog(prev=>({...prev,[selectedDate]:(prev[selectedDate]||[]).filter(e=>e.id!==id)}));
+    playSound("delete");
   };
   const updateWeight = w => {
     setProfile(p=>({...p,weight:w}));
@@ -2858,17 +3087,98 @@ AGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
         responseText = d.content[0].text;
       } else {
         const msgs = nc.slice(-10).map(m=>({role:m.r==="u"?"user":"assistant",content:m.t}));
-        // Use Sonnet for speed in chat (faster responses)
+        // Streaming with Haiku for fastest response
         const r = await fetch("https://api.anthropic.com/v1/messages",{
           method:"POST",
           headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-          body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:600,system:sysPrompt,messages:msgs})
+          body:JSON.stringify({
+            model:"claude-haiku-4-5-20251001",
+            max_tokens:1000,
+            system:sysPrompt+"\n\nTienes acceso a la herramienta web_search. ÚSALA cuando el usuario pregunte por información actual: noticias, datos recientes, marcas/productos específicos, precios, estudios nuevos, recetas que no conozcas, restaurantes, etc. Cuando uses la herramienta, integra la información naturalmente en tu respuesta sin mencionar que buscaste.",
+            messages:msgs,
+            stream:true,
+            tools:[{type:"web_search_20250305",name:"web_search",max_uses:3}]
+          })
         });
-        const d = await r.json();
-        if (d.error) throw new Error(d.error.message);
-        responseText = d.content[0].text;
+
+        if (!r.ok) {
+          const errBody = await r.text();
+          throw new Error("API error: "+errBody.slice(0,200));
+        }
+
+        // Add empty assistant message that we'll fill as stream comes
+        setChat(m=>[...m,{r:"a",t:""}]);
+        responseText = "";
+
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, {stream:true});
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6).trim();
+            if (!data || data === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(data);
+              // Handle text deltas
+              if (parsed.type === "content_block_delta" && parsed.delta && parsed.delta.type === "text_delta" && parsed.delta.text) {
+                responseText += parsed.delta.text;
+                setChat(m => {
+                  const updated = [...m];
+                  if (updated.length > 0 && updated[updated.length-1].r === "a") {
+                    updated[updated.length-1] = {...updated[updated.length-1], t: responseText};
+                  }
+                  return updated;
+                });
+              }
+              // Show "Buscando en internet..." indicator when web_search starts
+              if (parsed.type === "content_block_start" && parsed.content_block && parsed.content_block.type === "server_tool_use" && parsed.content_block.name === "web_search") {
+                setChat(m => {
+                  const updated = [...m];
+                  if (updated.length > 0 && updated[updated.length-1].r === "a") {
+                    const currentText = updated[updated.length-1].t;
+                    if (!currentText.includes("🔍")) {
+                      updated[updated.length-1] = {...updated[updated.length-1], t: currentText + (currentText ? "\n\n" : "") + "🔍 Buscando información actualizada..."};
+                    }
+                  }
+                  return updated;
+                });
+              }
+              // When search results come back, clean up the searching indicator
+              if (parsed.type === "content_block_stop" && parsed.index !== undefined) {
+                setChat(m => {
+                  const updated = [...m];
+                  if (updated.length > 0 && updated[updated.length-1].r === "a") {
+                    const cleaned = updated[updated.length-1].t.replace(/🔍 Buscando información actualizada\.\.\.\s*/g, "");
+                    if (cleaned !== updated[updated.length-1].t) {
+                      updated[updated.length-1] = {...updated[updated.length-1], t: cleaned};
+                      responseText = cleaned;
+                    }
+                  }
+                  return updated;
+                });
+              }
+              if (parsed.type === "error") {
+                throw new Error(parsed.error?.message || "Stream error");
+              }
+            } catch(parseErr) {
+              if (parseErr.message?.includes("Stream error")) throw parseErr;
+              // Ignore JSON parse errors for partial data
+            }
+          }
+        }
       }
-      setChat(m=>[...m,{r:"a",t:responseText}]);
+      // For attachment case, append normally
+      if (currentAtt) {
+        setChat(m=>[...m,{r:"a",t:responseText}]);
+      }
 
       // Trigger memory summarization every 6 user messages
       const userMsgCount = nc.filter(m=>m.r==="u").length;
@@ -2925,7 +3235,19 @@ AGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
   const waterGoal = Math.round((profile.weight || 80) * 0.035 * 10) / 10; // 35ml/kg in liters
   const addWater = (ml) => {
     const k = todayKey();
-    setWaterLog(prev => ({...prev, [k]: Math.max(0, (prev[k]||0) + ml)}));
+    setWaterLog(prev => {
+      const newAmount = Math.max(0, (prev[k]||0) + ml);
+      const wasGoalReached = (prev[k]||0) >= waterGoal*1000;
+      const isNowGoalReached = newAmount >= waterGoal*1000;
+      if (!wasGoalReached && isNowGoalReached) {
+        playSound("achievement");
+      } else if (ml > 0) {
+        playSound("water");
+      } else {
+        playSound("tap");
+      }
+      return {...prev, [k]: newAmount};
+    });
   };
 
   const generateDailyMenu = async () => {
@@ -3101,6 +3423,16 @@ Genera el reporte semanal según las instrucciones.`;
                 </div>
               </div>
             ) : (
+              <div style={{display:"flex",gap:8,marginBottom:10,justifyContent:"flex-end"}}>
+                <button type="button" onClick={()=>{playSound("tap");setSoundOn(!soundOn);}} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:soundOn?"var(--mint-soft)":"var(--bg-sunken)",border:"1px solid var(--line)",borderRadius:20,fontSize:11,fontWeight:700,color:soundOn?"var(--mint-deep)":"var(--ink-mute)",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
+                  <span style={{fontSize:13}}>{soundOn?"🔔":"🔕"}</span>
+                  <span>Sonidos</span>
+                </button>
+                <button type="button" onClick={()=>{playSound("tap");setMusicOn(!musicOn);}} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:musicOn?"var(--primary-soft)":"var(--bg-sunken)",border:"1px solid var(--line)",borderRadius:20,fontSize:11,fontWeight:700,color:musicOn?"var(--primary-deep)":"var(--ink-mute)",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
+                  <span style={{fontSize:13}}>{musicOn?"🎵":"🔇"}</span>
+                  <span>Música</span>
+                </button>
+              </div>
               <WeightStat current={profile.weight} start={profile.startWeight} goal={profile.goalWeight} history={weightHistory}/>
             )}
           </div>
