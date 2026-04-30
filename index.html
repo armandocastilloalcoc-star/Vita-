@@ -2130,7 +2130,12 @@ const dateKey = (d) => {
 const fmtDate = (iso) => { const d = new Date(iso+"T12:00:00"); return DAYS[d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1); };
 const sumDay = (entries) => {
   const t = {kcal:0,protein:0,carbs:0,fat:0,sugar:0,fiber:0,sodium:0};
-  (entries||[]).forEach(e => { if (e.totals) Object.keys(t).forEach(k => { t[k] += (e.totals[k]||0); }); });
+  (entries||[]).forEach(e => {
+    if (e && e.totals) Object.keys(t).forEach(k => {
+      const v = Number(e.totals[k]);
+      if (!isNaN(v)) t[k] += v;
+    });
+  });
   return t;
 };
 
@@ -2246,11 +2251,22 @@ function WeightChart({history,current,goal,start}) {
     );
   }
 
-  const points = history.slice(-12);
-  const weights = points.map(p=>p.weight);
-  const minW = Math.min(...weights, goal) - 1;
-  const maxW = Math.max(...weights, start||current) + 1;
-  const range = maxW - minW || 1;
+  const points = history.slice(-12).filter(p => p && typeof p.weight === "number" && !isNaN(p.weight));
+  if (points.length < 2) {
+    return (
+      <div style={{padding:"20px 0",textAlign:"center"}}>
+        <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:600,letterSpacing:0.5,textTransform:"uppercase"}}>Sin historial todavía</div>
+        <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:6,lineHeight:1.5}}>Actualiza tu peso varios días para ver tu progreso</div>
+      </div>
+    );
+  }
+  const weights = points.map(p=>Number(p.weight));
+  const safeGoal = Number(goal) || 70;
+  const safeStart = Number(start) || Number(current) || 80;
+  const safeCurrent = Number(current) || 80;
+  const minW = Math.min(...weights, safeGoal) - 1;
+  const maxW = Math.max(...weights, safeStart, safeCurrent) + 1;
+  const range = (maxW - minW) || 1;
 
   const w = 320, h = 130, pad = 24;
   const chartW = w - pad*2;
@@ -2262,7 +2278,7 @@ function WeightChart({history,current,goal,start}) {
   const linePath = points.map((p,i)=>(i===0?"M":"L")+(pad+i*xStep)+","+yScale(p.weight)).join(" ");
   const areaPath = linePath + " L"+(pad+(points.length-1)*xStep)+","+(pad+chartH)+" L"+pad+","+(pad+chartH)+" Z";
 
-  const goalY = yScale(goal);
+  const goalY = yScale(safeGoal);
 
   const first = points[0].weight;
   const last = points[points.length-1].weight;
@@ -2303,7 +2319,7 @@ function WeightChart({history,current,goal,start}) {
         </defs>
 
         <line x1={pad} y1={goalY} x2={w-pad} y2={goalY} stroke="#10b981" strokeWidth="1.5" strokeDasharray="4,4" opacity="0.6"/>
-        <text x={w-pad} y={goalY-5} textAnchor="end" fontSize="10" fill="#0d9488" fontWeight="700">Meta {goal}kg</text>
+        <text x={w-pad} y={goalY-5} textAnchor="end" fontSize="10" fill="#0d9488" fontWeight="700">Meta {safeGoal}kg</text>
 
         <path d={areaPath} fill="url(#wArea)"/>
         <path d={linePath} fill="none" stroke="#0891b2" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
