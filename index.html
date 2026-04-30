@@ -1860,10 +1860,12 @@ Genera el reporte semanal según las instrucciones.`;
                 );
               })()}
 
-              <div style={{padding:"16px 18px",background:"linear-gradient(135deg,rgba(8,145,178,0.06),rgba(16,185,129,0.04))",border:"1px solid var(--line)",borderRadius:16}}>
+              <div style={{padding:"16px 18px",background:"linear-gradient(135deg,rgba(8,145,178,0.06),rgba(16,185,129,0.04))",border:"1px solid var(--line)",borderRadius:16,marginBottom:16}}>
                 <div style={{fontSize:11,color:"var(--ink-mute)",letterSpacing:1.5,fontWeight:700,textTransform:"uppercase",marginBottom:8}}>💡 Recomendación</div>
                 <div style={{fontSize:14,color:"var(--ink)",lineHeight:1.6}}>{advice.text}</div>
               </div>
+
+              <button onClick={()=>setMacroDetail(null)} style={{width:"100%",padding:16,background:"linear-gradient(135deg,var(--primary),var(--mint))",border:"none",borderRadius:16,color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",letterSpacing:0.3,boxShadow:"0 8px 24px -8px rgba(8,145,178,0.4)",WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>← Volver</button>
             </div>
           </div>
         );
