@@ -2774,12 +2774,7 @@ function App() {
   React.useEffect(()=>{ localStorage.setItem("mc_plans",JSON.stringify(planData)); },[planData]);
   React.useEffect(()=>{ if(tab==="chat") setTimeout(()=>cEnd.current&&cEnd.current.scrollIntoView({behavior:"smooth"}),80); },[chat,tab]);
 
-  if (!profile) return <Onboarding onSave={p=>{
-    setProfile(p);
-    setWeightHistory([{date:todayKey(),weight:p.weight}]);
-    setChat([{r:"a",t:`Hola ${p.name}. Soy tu coach personal. Pregúntame lo que quieras.`}]);
-  }}/>;
-  // Smart greeting based on memory (only first render) - MUST be before any conditional return
+  // Smart greeting based on memory (only first render) - MUST be BEFORE any conditional return
   React.useEffect(()=>{
     if (profile && chat.length===1 && coachMemory.length>0) {
       const lastMem = coachMemory[coachMemory.length-1];
@@ -2789,6 +2784,12 @@ function App() {
     }
     // eslint-disable-next-line
   },[]);
+
+  if (!profile) return <Onboarding onSave={p=>{
+    setProfile(p);
+    setWeightHistory([{date:todayKey(),weight:p.weight}]);
+    setChat([{r:"a",t:`Hola ${p.name}. Soy tu coach personal. Pregúntame lo que quieras.`}]);
+  }}/>;
 
   if (showProfile) return <Onboarding initial={profile} onSave={p=>{setProfile(p);setShowProfile(false);}}/>;
 
