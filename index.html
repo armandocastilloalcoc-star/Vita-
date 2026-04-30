@@ -1908,9 +1908,90 @@ Genera el reporte semanal según las instrucciones.`;
                   </div>
                 </div>
 
-                <div style={{background:"var(--bg-sunken)",borderRadius:16,padding:18,fontSize:14,lineHeight:1.7,color:"var(--ink)",whiteSpace:"pre-wrap"}}>
-                  {weeklyReport.content}
-                </div>
+                {(() => {
+                  // Parse the report into sections by emoji headers
+                  const sectionConfig = [
+                    {emoji:"📊", key:"resumen", title:"Resumen", color:"var(--primary)", bg:"rgba(8,145,178,0.06)", border:"rgba(8,145,178,0.15)"},
+                    {emoji:"⚖️", key:"progreso", title:"Progreso", color:"var(--mint-deep)", bg:"rgba(16,185,129,0.06)", border:"rgba(16,185,129,0.15)"},
+                    {emoji:"🎯", key:"macros", title:"Macros", color:"#f59e0b", bg:"rgba(245,158,11,0.06)", border:"rgba(245,158,11,0.18)"},
+                    {emoji:"📅", key:"patrones", title:"Patrones", color:"#a78bfa", bg:"rgba(167,139,250,0.06)", border:"rgba(167,139,250,0.18)"},
+                    {emoji:"💡", key:"plan", title:"Plan", color:"var(--mint-deep)", bg:"linear-gradient(135deg,rgba(8,145,178,0.08),rgba(16,185,129,0.06))", border:"rgba(16,185,129,0.2)"},
+                  ];
+
+                  const text = weeklyReport.content || "";
+                  const sections = [];
+                  let currentSection = null;
+                  const lines = text.split("\n");
+
+                  for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+
+                    let foundSection = null;
+                    for (const cfg of sectionConfig) {
+                      if (trimmed.startsWith(cfg.emoji) || trimmed.includes(cfg.title.toUpperCase())) {
+                        foundSection = cfg;
+                        break;
+                      }
+                    }
+
+                    if (foundSection) {
+                      if (currentSection) sections.push(currentSection);
+                      currentSection = {...foundSection, items: []};
+                    } else if (currentSection) {
+                      // Clean up bullet markers
+                      const clean = trimmed.replace(/^[-•*]\s*/, "").trim();
+                      if (clean) currentSection.items.push(clean);
+                    }
+                  }
+                  if (currentSection) sections.push(currentSection);
+
+                  // Fallback if no sections found
+                  if (sections.length === 0) {
+                    return (
+                      <div style={{background:"var(--bg-sunken)",borderRadius:16,padding:20,fontSize:14,lineHeight:1.7,color:"var(--ink)",whiteSpace:"pre-wrap"}}>
+                        {text}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                      {sections.map((s,i)=>(
+                        <div key={i} style={{background:s.bg,border:"1px solid "+s.border,borderRadius:18,padding:"18px 20px",overflow:"hidden"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                            <div style={{width:36,height:36,borderRadius:11,background:"var(--bg-elev)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,boxShadow:"0 2px 6px rgba(0,0,0,0.04)"}}>{s.emoji}</div>
+                            <div style={{fontSize:15,color:s.color,fontWeight:800,letterSpacing:0.3,textTransform:"uppercase"}}>{s.title}</div>
+                          </div>
+                          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                            {s.items.map((item,j)=>{
+                              // Detect if it's a key:value line (e.g., "Calorías: 1850")
+                              const colonIdx = item.indexOf(":");
+                              if (colonIdx > 0 && colonIdx < 35) {
+                                const key = item.substring(0,colonIdx).trim();
+                                const val = item.substring(colonIdx+1).trim();
+                                return (
+                                  <div key={j} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"6px 0"}}>
+                                    <div style={{flex:"0 0 auto",fontSize:13,color:"var(--ink-mute)",fontWeight:600,minWidth:90}}>{key}</div>
+                                    <div style={{flex:1,fontSize:14,color:"var(--ink)",fontWeight:600,lineHeight:1.5}}>{val}</div>
+                                  </div>
+                                );
+                              }
+                              // Numbered or bulleted item
+                              const isBullet = /^\d+[.)]\s/.test(item) || s.key==="plan";
+                              return (
+                                <div key={j} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"4px 0"}}>
+                                  {isBullet && <div style={{flex:"0 0 auto",width:22,height:22,borderRadius:"50%",background:s.color,color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",marginTop:1}}>{j+1}</div>}
+                                  <div style={{flex:1,fontSize:14,color:"var(--ink)",lineHeight:1.55,fontWeight:isBullet?600:500}}>{item.replace(/^\d+[.)]\s*/, "")}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",marginTop:14,fontWeight:500}}>
                   Generado {new Date(weeklyReport.timestamp).toLocaleString("es-MX",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
