@@ -3388,17 +3388,19 @@ Genera el reporte semanal según las instrucciones.`;
                 </div>
               </div>
             ) : (
-              <div style={{display:"flex",gap:8,marginBottom:10,justifyContent:"flex-end"}}>
-                <button type="button" onClick={()=>{playSound("tap");setSoundOn(!soundOn);}} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:soundOn?"var(--mint-soft)":"var(--bg-sunken)",border:"1px solid var(--line)",borderRadius:20,fontSize:11,fontWeight:700,color:soundOn?"var(--mint-deep)":"var(--ink-mute)",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
-                  <span style={{fontSize:13}}>{soundOn?"🔔":"🔕"}</span>
-                  <span>Sonidos</span>
-                </button>
-                <button type="button" onClick={()=>{playSound("tap");setMusicOn(!musicOn);}} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:musicOn?"var(--primary-soft)":"var(--bg-sunken)",border:"1px solid var(--line)",borderRadius:20,fontSize:11,fontWeight:700,color:musicOn?"var(--primary-deep)":"var(--ink-mute)",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
-                  <span style={{fontSize:13}}>{musicOn?"🎵":"🔇"}</span>
-                  <span>Música</span>
-                </button>
-              </div>
-              <WeightStat current={profile.weight} start={profile.startWeight} goal={profile.goalWeight} history={weightHistory}/>
+              <>
+                <div style={{display:"flex",gap:8,marginBottom:10,justifyContent:"flex-end"}}>
+                  <button type="button" onClick={()=>{playSound("tap");setSoundOn(!soundOn);}} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:soundOn?"var(--mint-soft)":"var(--bg-sunken)",border:"1px solid var(--line)",borderRadius:20,fontSize:11,fontWeight:700,color:soundOn?"var(--mint-deep)":"var(--ink-mute)",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
+                    <span style={{fontSize:13}}>{soundOn?"🔔":"🔕"}</span>
+                    <span>Sonidos</span>
+                  </button>
+                  <button type="button" onClick={()=>{playSound("tap");setMusicOn(!musicOn);}} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:musicOn?"var(--primary-soft)":"var(--bg-sunken)",border:"1px solid var(--line)",borderRadius:20,fontSize:11,fontWeight:700,color:musicOn?"var(--primary-deep)":"var(--ink-mute)",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
+                    <span style={{fontSize:13}}>{musicOn?"🎵":"🔇"}</span>
+                    <span>Música</span>
+                  </button>
+                </div>
+                <WeightStat current={profile.weight} start={profile.startWeight} goal={profile.goalWeight} history={weightHistory}/>
+              </>
             )}
           </div>
 
