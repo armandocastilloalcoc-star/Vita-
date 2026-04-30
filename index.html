@@ -2785,47 +2785,12 @@ function App() {
     localStorage.setItem("mc_music_enabled", JSON.stringify(musicOn));
     if (musicOn) startBgMusic(); else stopBgMusic();
   },[musicOn]);
-  // Register Service Worker for offline support and survival across app switches
+  // Unregister any existing service workers (cleanup from previous version)
   React.useEffect(()=>{
     if ("serviceWorker" in navigator) {
-      const swCode = `
-        const CACHE = "vita-v1";
-        self.addEventListener("install", e => {
-          self.skipWaiting();
-        });
-        self.addEventListener("activate", e => {
-          e.waitUntil(self.clients.claim());
-        });
-        self.addEventListener("fetch", e => {
-          const url = new URL(e.request.url);
-          // Don't cache API calls (always need fresh)
-          if (url.hostname === "api.anthropic.com") return;
-          // Network-first for HTML/JS, fallback to cache
-          if (e.request.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname === "/") {
-            e.respondWith(
-              fetch(e.request).then(resp => {
-                const copy = resp.clone();
-                caches.open(CACHE).then(c => c.put(e.request, copy));
-                return resp;
-              }).catch(() => caches.match(e.request).then(r => r || caches.match("/")))
-            );
-            return;
-          }
-          // Cache-first for other resources
-          e.respondWith(
-            caches.match(e.request).then(cached => cached || fetch(e.request).then(resp => {
-              if (resp.ok) {
-                const copy = resp.clone();
-                caches.open(CACHE).then(c => c.put(e.request, copy));
-              }
-              return resp;
-            }).catch(() => caches.match("/")))
-          );
-        });
-      `;
-      const blob = new Blob([swCode], {type:"application/javascript"});
-      const swUrl = URL.createObjectURL(blob);
-      navigator.serviceWorker.register(swUrl).catch(()=>{});
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        regs.forEach(reg => reg.unregister());
+      }).catch(()=>{});
     }
   },[]);
 
