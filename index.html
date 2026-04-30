@@ -170,36 +170,52 @@ TIP: [consejo]`;
 const CHAT_PROMPT = (prof) => prof + `
 Eres coach experto: nutriologo + entrenador. Max 3 parrafos. Si pregunta medico delicado, recomienda consultar medico. Conoces el historial del usuario, usa esa informacion para dar respuestas personalizadas y hacer seguimiento.`;
 
-const DAILY_MENU_PROMPT = (prof) => prof + `
+const DAILY_MENU_PROMPT = (prof, target, macroT) => prof + `
 
-Genera un MENÚ COMPLETO del día (desayuno, comida, cena, 1-2 snacks) que cumpla con TODAS estas reglas estrictas:
+Genera un MENÚ COMPLETO del día (desayuno + comida + cena + 2 snacks) BALANCEADO para CERRAR los círculos diarios.
 
-1. SIN VERDURAS VISIBLES — el usuario NO COME verduras. Si una receta lleva verduras, deben ir LICUADAS, RALLADAS u OCULTAS sin que se sientan. Sin ensaladas. Sin verduras al vapor. Sin verduras a la plancha.
-2. SIN SALMÓN — no le gusta.
-3. Calorías totales acordes a la meta de bajar de peso (deficit moderado).
-4. Alta proteína (mínimo 130g/día para mantener masa magra).
-5. Carbos moderados, grasas buenas, fibra alta.
-6. Comidas reales, sabrosas, mexicanas/familiares — nada de "ensaladas tristes".
-7. La cocinera de su casa puede prepararlo — NO usar Thermomix.
+DISTRIBUCIÓN OBLIGATORIA DE CALORÍAS para llegar exacto a ${target}kcal:
+- Desayuno: ${Math.round(target*0.25)}kcal (25% del día)
+- Snack mañana: ${Math.round(target*0.10)}kcal (10%)
+- Comida: ${Math.round(target*0.35)}kcal (35%)
+- Snack tarde: ${Math.round(target*0.10)}kcal (10%)
+- Cena: ${Math.round(target*0.20)}kcal (20%)
+
+OBJETIVOS DE MACROS (deben cumplirse al sumar todo):
+- Proteína: ${macroT.protein}g
+- Carbos: ${macroT.carbs}g
+- Grasas: ${macroT.fat}g
+- Fibra mínimo: ${macroT.fiber}g
+- Azúcar máximo: ${macroT.sugar}g
+
+REGLAS ESTRICTAS:
+1. SIN VERDURAS VISIBLES — verduras LICUADAS, RALLADAS u OCULTAS. Sin ensaladas, sin verduras al vapor.
+2. SIN SALMÓN.
+3. Comidas reales, sabrosas, mexicanas/familiares.
+4. Sin Thermomix (cocinera prepara con utensilios normales).
+5. Cada comida con LISTA DE INGREDIENTES con cantidades exactas en gramos/unidades.
+6. La SUMA de las calorías de todas las comidas debe ser ${target} ± 50kcal.
 
 Devuelve SOLO un JSON válido (sin markdown) con esta estructura:
 {
-  "summary": "Frase corta describiendo el día (ej: 'Día alto en proteína con sabores familiares y verduras escondidas en salsas')",
+  "summary": "Frase corta describiendo el día",
   "meals": [
     {
       "type": "Desayuno",
-      "emoji": "☀",
+      "emoji": "☀️",
       "name": "Nombre del platillo",
-      "description": "1 oración describiendo qué es y por qué es buena opción",
-      "kcal": 380,
-      "protein": 28,
+      "description": "1 oración describiendo qué es",
+      "kcal": ${Math.round(target*0.25)},
+      "protein": 30,
       "carbs": 35,
-      "fat": 12,
-      "highlight": "Por qué es estratégico hoy (ej: 'Te arranca el día con proteína')"
+      "fat": 10,
+      "ingredients": ["3 huevos", "1 tortilla integral", "30g queso oaxaca", "1/2 aguacate", "1 cdita aceite oliva"],
+      "highlight": "Por qué es estratégico"
     }
   ],
   "totals": {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0},
-  "tips": ["3 tips concretos para el día, cada uno breve"]
+  "shoppingList": ["Lista consolidada de TODOS los ingredientes del día con cantidades sumadas"],
+  "tips": ["3 tips concretos del día"]
 }`;
 
 const WEEKLY_REPORT_PROMPT = (prof) => prof + `
@@ -241,340 +257,1665 @@ Formato: lista corta con viñetas. Si no hay nada relevante, responde solo "NADA
 const DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 const MEAL_ICONS = {desayuno:"☀",almuerzo:"◐",cena:"☾",snack:"◇"};
 const RECIPES = [
-  {
-    id:"r01",
-    name:"Spaghetti boloñesa con verduras escondidas",
-    emoji:"🍝",
-    category:"comida",
-    time:"30 min",
-    kcal:480,
-    difficulty:"Fácil",
-    hidden:["zanahoria","apio","calabacita","espinaca"],
-    benefits:["Alta proteína","Fibra escondida","Carbos lentos"],
-    description:"Pasta clásica donde la salsa lleva 5 verduras licuadas. No las ves, no las pruebas. Sabe a boloñesa de la abuela.",
-    ingredients:[
-      "200g de carne molida 90% magra",
-      "200g de pasta integral",
-      "2 jitomates grandes maduros",
-      "1 zanahoria mediana",
-      "1 rama de apio",
-      "1/2 calabacita",
-      "1 puño de espinaca baby",
-      "1/2 cebolla blanca",
-      "2 dientes de ajo",
-      "1 cda aceite de oliva",
-      "Sal, pimienta, orégano, albahaca",
-      "Queso parmesano para servir"
-    ],
-    steps:[
-      "Pon a hervir agua con sal para la pasta",
-      "En la licuadora pon: jitomate, zanahoria, apio, calabacita, espinaca, ajo, cebolla. Licúa 1 min hasta que quede salsa roja sin grumos.",
-      "Sofríe la carne en una sartén con aceite hasta dorar (5 min)",
-      "Agrega la salsa licuada a la carne. Sazona con sal, pimienta, orégano, albahaca",
-      "Cocina a fuego medio 15-20 min hasta que espese",
-      "Hierve la pasta al dente según el paquete",
-      "Sirve la pasta con la salsa encima y parmesano rallado"
-    ],
-    trick:"La zanahoria da dulzor natural, la espinaca da color profundo, el apio da sabor umami. Tu hijo de 10 nunca va a sospechar."
-  },
-  {
-    id:"r02",
-    name:"Hamburguesas jugosas con verdura oculta",
-    emoji:"🍔",
-    category:"comida",
-    time:"25 min",
-    kcal:520,
-    difficulty:"Fácil",
-    hidden:["calabacita","cebolla","espinaca"],
-    benefits:["Proteína completa","Más jugosa que normal","Fibra"],
-    description:"Hamburguesas que llevan calabacita rallada — las hace más jugosas y mete fibra sin que se note. Sabe a hamburguesa normal pero mejor.",
-    ingredients:[
-      "300g carne molida res 80/20",
-      "1/2 calabacita rallada y exprimida",
-      "1/4 cebolla picada finita",
-      "1 puño de espinaca picada muy finita",
-      "1 huevo",
-      "2 cdas pan molido",
-      "1 cdita salsa inglesa",
-      "Sal, pimienta, ajo en polvo, paprika",
-      "2 panes integrales",
-      "Lechuga, jitomate, cebolla, mostaza, mayonesa light"
-    ],
-    steps:[
-      "Ralla la calabacita y exprímela bien con las manos para sacar el agua (importante)",
-      "Mezcla en un bowl: carne, calabacita exprimida, cebolla, espinaca, huevo, pan molido, salsa inglesa, especias",
-      "Forma 2 hamburguesas gruesas. No las aplanes mucho.",
-      "Calienta sartén o plancha a fuego alto. Sin aceite si es antiadherente.",
-      "Cocina 4 min de un lado, voltea, 4 min del otro lado",
-      "Tuesta los panes ligeramente",
-      "Arma con lechuga, jitomate y tu salsa favorita"
-    ],
-    trick:"La calabacita rallada y exprimida desaparece dentro de la carne. Solo queda más jugosa. Funciona igual con zanahoria rallada."
-  },
-  {
-    id:"r03",
-    name:"Crema de zanahoria estilo restaurante",
-    emoji:"🥕",
-    category:"comida",
-    time:"30 min",
-    kcal:220,
-    difficulty:"Fácil",
-    hidden:["zanahoria","apio","cebolla","ajo"],
-    benefits:["Vitamina A","Antioxidantes","Saciante"],
-    description:"Crema sedosa, dulce natural, con un toque de jengibre. Sabe a sopa de restaurante caro. Sin sabor a 'verdura'.",
-    ingredients:[
-      "6 zanahorias grandes peladas y en cubos",
-      "1 cebolla blanca picada",
-      "2 dientes de ajo",
-      "1 papa pequeña (para textura)",
-      "1 cm de jengibre fresco",
-      "1L caldo de pollo",
-      "100ml leche evaporada light",
-      "1 cda aceite de oliva",
-      "Sal, pimienta blanca, nuez moscada",
-      "Crocantes de pan tostado para servir"
-    ],
-    steps:[
-      "Sofríe cebolla y ajo en aceite a fuego medio 3 min",
-      "Agrega zanahoria, papa y jengibre. Cocina 5 min",
-      "Añade caldo de pollo, sal y pimienta. Hierve 20 min hasta que zanahoria esté blandita",
-      "Pasa todo a la licuadora. Licúa 1 min a velocidad máxima",
-      "Regresa a la olla, agrega leche evaporada y nuez moscada. Calienta 2 min",
-      "Sirve con crocantes de pan y pimienta recién molida"
-    ],
-    trick:"El jengibre y nuez moscada disfrazan el sabor a verdura. La papa da textura cremosa sin necesidad de mucha crema."
-  },
-  {
-    id:"r04",
-    name:"Pancakes proteicos con plátano",
-    emoji:"🥞",
-    category:"desayuno",
-    time:"15 min",
-    kcal:380,
-    difficulty:"Fácil",
-    hidden:[],
-    benefits:["Alta proteína","Sin azúcar","Saciante"],
-    description:"Hot cakes esponjosos con sabor a plátano y avena. Mucha proteína, cero azúcar añadida. Mejor que los de la cafetería.",
-    ingredients:[
-      "1 plátano maduro",
-      "2 huevos",
-      "1/2 taza avena en hojuelas",
-      "1 scoop proteína whey vainilla",
-      "1/2 cdita polvo para hornear",
-      "1 cdita canela",
-      "1/4 cdita esencia de vainilla",
-      "Mantequilla o spray para sartén",
-      "Para servir: berries, mantequilla de almendra, miel de agave"
-    ],
-    steps:[
-      "Licúa todo en licuadora: plátano, huevos, avena, proteína, polvo para hornear, canela, vainilla. 1 min hasta que quede mezcla suave.",
-      "Reposa 5 min para que se hidrate la avena",
-      "Calienta sartén antiadherente a fuego medio-bajo",
-      "Vierte porciones de 1/4 taza por pancake. Cuece 2 min hasta que salgan burbujas",
-      "Voltea con cuidado, cuece 1.5 min del otro lado",
-      "Sirve con berries y un toque de miel de agave"
-    ],
-    trick:"El plátano da dulzor natural, no necesitas azúcar. La proteína whey los hace esponjosos y te da 30g de proteína en el desayuno."
-  },
-  {
-    id:"r05",
-    name:"Lasaña con carne y vegetales licuados",
-    emoji:"🥘",
-    category:"comida",
-    time:"60 min",
-    kcal:550,
-    difficulty:"Media",
-    hidden:["espinaca","zanahoria","jitomate","calabacita"],
-    benefits:["Comida completa","4 verduras escondidas","Proteína"],
-    description:"Lasaña tradicional pero la salsa lleva todas las verduras licuadas. Tu hijo va a pedir repetir.",
-    ingredients:[
-      "9 láminas de pasta para lasaña",
-      "400g carne molida res",
-      "4 jitomates",
-      "2 zanahorias",
-      "1 calabacita",
-      "2 puños espinaca",
-      "1/2 cebolla",
-      "3 dientes de ajo",
-      "300g queso ricotta o cottage light",
-      "200g mozzarella rallada",
-      "50g parmesano",
-      "Albahaca, orégano, sal, pimienta"
-    ],
-    steps:[
-      "Licúa en licuadora: jitomate, zanahoria, calabacita, espinaca, cebolla, ajo. Queda salsa roja",
-      "Sofríe la carne molida 5 min, agrega la salsa licuada y especias. Cocina 20 min",
-      "Hierve las láminas de pasta según paquete. Escurre",
-      "En refractario: capa de salsa, capa de pasta, capa de ricotta, capa de mozzarella. Repite 3 veces.",
-      "Termina con mozzarella y parmesano arriba",
-      "Hornea a 180°C por 30 min hasta dorar"
-    ],
-    trick:"4 verduras desaparecen en la salsa. Sabe a lasaña italiana de restaurante."
-  },
-  {
-    id:"r06",
-    name:"Smoothie verde que sabe a postre",
-    emoji:"🥤",
-    category:"snack",
-    time:"5 min",
-    kcal:280,
-    difficulty:"Fácil",
-    hidden:["espinaca","aguacate"],
-    benefits:["Antioxidantes","Grasas buenas","Saciante"],
-    description:"Espinaca + aguacate dentro de un smoothie que sabe a piña colada. No miente — el sabor a fruta tropical gana.",
-    ingredients:[
-      "1 puño de espinaca baby",
-      "1/4 aguacate maduro",
-      "1/2 plátano congelado",
-      "1/2 taza piña en cubos",
-      "1 taza leche de almendra sin azúcar",
-      "1 scoop proteína vainilla",
-      "1 cdita coco rallado",
-      "Hielo al gusto"
-    ],
-    steps:[
-      "Pon todo en licuadora",
-      "Licúa 1 min a velocidad alta hasta que esté súper cremoso",
-      "Sirve frío"
-    ],
-    trick:"La piña enmascara totalmente la espinaca. El aguacate da cremosidad sin sabor. Es como una piña colada saludable."
-  },
-  {
-    id:"r07",
-    name:"Albóndigas en chipotle con salsa secreta",
-    emoji:"🍲",
-    category:"comida",
-    time:"40 min",
-    kcal:420,
-    difficulty:"Media",
-    hidden:["zanahoria","calabacita","cebolla"],
-    benefits:["Proteína alta","Picante saludable","Comfort food"],
-    description:"Albóndigas mexicanas en salsa de chipotle. La carne lleva calabacita rallada (no se ve), la salsa lleva zanahoria.",
-    ingredients:[
-      "400g carne molida (mitad res, mitad cerdo)",
-      "1/2 calabacita rallada exprimida",
-      "1/4 cebolla picada finita",
-      "1 huevo",
-      "2 cdas arroz crudo",
-      "Sal y pimienta",
-      "PARA LA SALSA:",
-      "4 jitomates",
-      "1 zanahoria",
-      "1 cebolla",
-      "2 chipotles en adobo",
-      "1 ajo",
-      "Caldo de pollo, sal, comino"
-    ],
-    steps:[
-      "Mezcla la carne con calabacita, cebolla, huevo, arroz, sal y pimienta. Forma 16 albóndigas.",
-      "Licúa la salsa: jitomate, zanahoria, cebolla, chipotle, ajo, caldo, especias",
-      "Vierte la salsa en una olla. Hierve 5 min",
-      "Agrega las albóndigas. Tapa y cocina 25 min a fuego medio-bajo",
-      "Sirve con arroz blanco"
-    ],
-    trick:"El chipotle disfraza cualquier sabor 'verdoso'. El comino refuerza el sabor mexicano."
-  },
-  {
-    id:"r08",
-    name:"Pizza saludable de masa de coliflor",
-    emoji:"🍕",
-    category:"cena",
-    time:"35 min",
-    kcal:380,
-    difficulty:"Media",
-    hidden:["coliflor"],
-    benefits:["Sin gluten","Bajo carbo","Alta proteína"],
-    description:"Pizza con masa de coliflor que NO sabe a coliflor. El queso y especias dominan. Crujiente como pizza normal.",
-    ingredients:[
-      "1 coliflor mediana (sale 2 tazas rallada)",
-      "1 huevo",
-      "1/2 taza mozzarella rallada",
-      "1/4 taza parmesano",
-      "1 cdita orégano",
-      "Sal y ajo en polvo",
-      "PARA TOPPINGS:",
-      "Salsa de tomate",
-      "Mozzarella extra",
-      "Pollo desmenuzado o pepperoni light",
-      "Albahaca fresca"
-    ],
-    steps:[
-      "Ralla la coliflor en procesador o con rallador manual hasta que quede como arroz",
-      "Mete al microondas 5 min. Cuando enfríe, exprime con un trapo TODA el agua (paso clave)",
-      "Mezcla con huevo, quesos, orégano, sal, ajo. Forma una masa.",
-      "Extiende sobre papel para horno formando una pizza de 25cm",
-      "Hornea a 220°C por 15 min hasta dorar",
-      "Saca, agrega salsa, queso, toppings. Hornea 8 min más"
-    ],
-    trick:"Exprimir BIEN el agua de la coliflor es lo más importante. Si queda húmeda, sabe a coliflor. Si la secas bien, sabe a pizza normal."
-  },
-  {
-    id:"r09",
-    name:"Brownies con frijol negro",
-    emoji:"🍫",
-    category:"snack",
-    time:"40 min",
-    kcal:180,
-    difficulty:"Fácil",
-    hidden:["frijol negro"],
-    benefits:["Proteína","Fibra alta","Sin harina"],
-    description:"Brownies fudgy súper chocolatosos. Llevan frijol negro en lugar de harina. NADIE detecta el frijol. En serio.",
-    ingredients:[
-      "1 lata de frijoles negros (escurridos y enjuagados)",
-      "3 huevos",
-      "1/3 taza cocoa sin azúcar",
-      "1/3 taza miel de agave o maple",
-      "1/4 taza aceite de coco derretido",
-      "1 cdita esencia de vainilla",
-      "1/2 cdita polvo para hornear",
-      "Pizca de sal",
-      "1/2 taza chispas chocolate amargo"
-    ],
-    steps:[
-      "Precalienta horno a 180°C",
-      "En licuadora: procesa los frijoles bien escurridos hasta puré",
-      "Agrega huevos, cocoa, agave, aceite, vainilla, polvo para hornear, sal. Licúa 30 seg",
-      "Incorpora chispas con espátula",
-      "Vierte en molde 20×20cm engrasado",
-      "Hornea 25-28 min. Deja enfriar antes de cortar"
-    ],
-    trick:"El cocoa amargo y el chocolate dominan completamente. Sirve fríos. La textura es fudgy, idéntica a brownies normales."
-  },
-  {
-    id:"r10",
-    name:"Pollo cremoso con espinaca oculta",
-    emoji:"🍗",
-    category:"comida",
-    time:"25 min",
-    kcal:440,
-    difficulty:"Fácil",
-    hidden:["espinaca","champiñón"],
-    benefits:["Alta proteína","Hierro","Cremoso"],
-    description:"Pollo en salsa cremosa estilo Toscana. La salsa va licuada con espinaca y champiñones. Sabe a restaurante italiano.",
-    ingredients:[
-      "2 pechugas de pollo en filetes",
-      "2 puños espinaca baby",
-      "100g champiñones",
-      "1/2 cebolla",
-      "2 ajos",
-      "200ml crema light",
-      "100ml caldo pollo",
-      "1/4 taza parmesano",
-      "1 cda aceite oliva",
-      "Sal, pimienta, paprika, tomillo",
-      "Para servir: pasta o arroz"
-    ],
-    steps:[
-      "Sazona el pollo con sal, pimienta, paprika. Sella en sartén con aceite 4 min por lado. Reserva.",
-      "En la misma sartén sofríe cebolla y ajo 2 min",
-      "Agrega espinaca y champiñones. Cocina 4 min hasta que reduzcan",
-      "Pasa todo a la licuadora con caldo de pollo. Licúa 30 seg a velocidad alta",
-      "Regresa a la sartén. Agrega crema y parmesano. Hierve 3 min",
-      "Regresa el pollo a la sartén con la salsa. Cocina 5 min más",
-      "Sirve con pasta o arroz"
-    ],
-    trick:"Los champiñones licuados dan profundidad de sabor (umami). La espinaca se vuelve invisible al licuarla con la crema."
-  }
+{
+"id": "d01",
+"name": "Pancakes proteicos con plátano",
+"emoji": "🥞",
+"category": "desayuno",
+"time": "15 min",
+"kcal": 380,
+"protein": 32,
+"carbs": 42,
+"fat": 10,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Alta proteína",
+"Sin azúcar",
+"Saciante"
+],
+"description": "Hot cakes esponjosos sabor plátano y avena. Mucha proteína, cero azúcar añadida.",
+"ingredients": [
+"1 plátano maduro",
+"2 huevos",
+"1/2 taza avena en hojuelas",
+"1 scoop proteína whey vainilla",
+"1/2 cdita polvo para hornear",
+"1 cdita canela",
+"1/4 cdita esencia de vainilla",
+"Spray para sartén",
+"Para servir: berries, mantequilla de almendra"
+],
+"steps": [
+"Licúa todo: plátano, huevos, avena, proteína, polvo para hornear, canela, vainilla. 1 min hasta que quede mezcla suave",
+"Reposa 5 min para que se hidrate la avena",
+"Calienta sartén antiadherente a fuego medio-bajo",
+"Vierte porciones de 1/4 taza por pancake. Cuece 2 min hasta que salgan burbujas",
+"Voltea con cuidado, cuece 1.5 min del otro lado",
+"Sirve con berries y mantequilla de almendra"
+],
+"trick": "El plátano da dulzor natural, no necesitas azúcar. La proteína whey los hace esponjosos."
+},
+{
+"id": "d02",
+"name": "Huevos rancheros con frijoles",
+"emoji": "🍳",
+"category": "desayuno",
+"time": "15 min",
+"kcal": 420,
+"protein": 28,
+"carbs": 38,
+"fat": 18,
+"difficulty": "Fácil",
+"hidden": [
+"jitomate",
+"cebolla",
+"chile"
+],
+"benefits": [
+"Proteína completa",
+"Sabor mexicano",
+"Energía"
+],
+"description": "Clásico mexicano con salsa fresca y frijoles refritos. Te arranca el día con energía.",
+"ingredients": [
+"3 huevos",
+"2 tortillas de maíz",
+"1/2 taza frijoles refritos",
+"2 jitomates",
+"1/4 cebolla",
+"1 chile serrano",
+"1 ajo",
+"Cilantro",
+"Sal, aceite",
+"Queso fresco para espolvorear"
+],
+"steps": [
+"Licúa jitomates, cebolla, chile, ajo y sal hasta salsa",
+"Calienta la salsa en sartén 5 min hasta espesar",
+"Calienta los frijoles refritos",
+"Tuesta las tortillas en comal",
+"Fríe los huevos estrellados",
+"Monta: tortilla, frijoles, huevo encima, baña con salsa, espolvorea queso fresco y cilantro"
+],
+"trick": "La salsa licuada lleva chile y cebolla pero no las ves. Sabor intenso, sin texturas."
+},
+{
+"id": "d03",
+"name": "Smoothie bowl tropical proteico",
+"emoji": "🥣",
+"category": "desayuno",
+"time": "5 min",
+"kcal": 350,
+"protein": 28,
+"carbs": 45,
+"fat": 8,
+"difficulty": "Fácil",
+"hidden": [
+"espinaca"
+],
+"benefits": [
+"Antioxidantes",
+"Refrescante",
+"Saciante"
+],
+"description": "Bowl espeso con sabor a piña y mango. La espinaca desaparece entre las frutas.",
+"ingredients": [
+"1/2 plátano congelado",
+"1/2 taza piña congelada",
+"1/2 mango",
+"1 puño espinaca baby",
+"1 scoop proteína vainilla",
+"1/4 taza yogurt griego",
+"100ml leche de almendra",
+"TOPPINGS: granola, coco rallado, semillas de chía, fresas"
+],
+"steps": [
+"Pon todos los ingredientes (excepto toppings) en la licuadora",
+"Licúa 1 min hasta que quede súper espeso (más espeso que un smoothie normal)",
+"Si está muy líquido, agrega más fruta congelada",
+"Sirve en bowl",
+"Decora con granola, coco, chía y fresas"
+],
+"trick": "La piña enmascara cualquier sabor a verde. El plátano y mango congelados dan textura cremosa."
+},
+{
+"id": "d04",
+"name": "Chilaquiles verdes con pollo",
+"emoji": "🌽",
+"category": "desayuno",
+"time": "20 min",
+"kcal": 480,
+"protein": 35,
+"carbs": 42,
+"fat": 18,
+"difficulty": "Media",
+"hidden": [
+"tomatillo",
+"cilantro",
+"cebolla",
+"chile"
+],
+"benefits": [
+"Alta proteína",
+"Sabor mexicano",
+"Carga energética"
+],
+"description": "Chilaquiles verdes con pollo deshebrado. Salsa licuada perfecta, nada texturoso.",
+"ingredients": [
+"6 tortillas de maíz cortadas en triángulos",
+"1 pechuga de pollo cocida y deshebrada",
+"8 tomates verdes",
+"1/4 cebolla",
+"1 chile serrano",
+"1 ajo",
+"Puño de cilantro",
+"Caldo de pollo",
+"Aceite",
+"Crema, queso fresco, cebolla rebanada"
+],
+"steps": [
+"Hornea o fríe las tortillas hasta dorar",
+"Hierve los tomates verdes con chile, cebolla y ajo 8 min",
+"Licúa con cilantro y un poco de caldo hasta salsa lisa",
+"Calienta la salsa con sal",
+"Agrega los totopos y revuelve para que se bañen pero queden crujientes",
+"Sirve con pollo deshebrado, crema, queso y cebolla rebanada"
+],
+"trick": "Cilantro va licuado dentro. El chile aporta sabor sin picor texturoso."
+},
+{
+"id": "d05",
+"name": "Avena cremosa con manzana y canela",
+"emoji": "🌾",
+"category": "desayuno",
+"time": "10 min",
+"kcal": 340,
+"protein": 22,
+"carbs": 52,
+"fat": 7,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Fibra alta",
+"Saciante por horas",
+"Bajo en grasa"
+],
+"description": "Avena estilo postre con manzana caliente y canela. Sabe a pay de manzana saludable.",
+"ingredients": [
+"1/2 taza avena en hojuelas",
+"1 taza leche de almendra",
+"1 manzana picada",
+"1 cdita canela",
+"1 scoop proteína vainilla",
+"1 cda nueces picadas",
+"1 cdita miel de agave",
+"Pizca de sal"
+],
+"steps": [
+"Cocina avena con leche de almendra, canela y sal a fuego medio 5 min",
+"En sartén aparte saltea la manzana picada con un toque de canela 3 min",
+"Cuando avena esté cremosa, retira del fuego",
+"Mezcla la proteína cuando ya no esté hirviendo (para que no se cuaje)",
+"Sirve con manzana encima, nueces y miel de agave"
+],
+"trick": "Cocer la manzana sola con canela la vuelve postre. La proteína se agrega al final para no ruinarla."
+},
+{
+"id": "d06",
+"name": "Burrito de huevo y queso",
+"emoji": "🌯",
+"category": "desayuno",
+"time": "15 min",
+"kcal": 420,
+"protein": 32,
+"carbs": 38,
+"fat": 16,
+"difficulty": "Fácil",
+"hidden": [
+"jitomate",
+"pimiento",
+"cebolla"
+],
+"benefits": [
+"Portátil",
+"Alta proteína",
+"Saciante"
+],
+"description": "Burrito con huevos revueltos cremosos y queso. Las verduras van picadas finísimas.",
+"ingredients": [
+"3 huevos",
+"1 tortilla harina integral grande",
+"1/4 taza queso oaxaca",
+"1/4 jitomate sin semillas picado finísimo",
+"1/4 pimiento rojo picado finísimo",
+"1 cda cebolla picada finísima",
+"Sal, pimienta",
+"Salsa al gusto"
+],
+"steps": [
+"Pica el jitomate, pimiento y cebolla súper finos (casi puré)",
+"Bate los huevos con sal y pimienta",
+"Sofríe las verduras en sartén 2 min hasta suavizarse",
+"Agrega los huevos batidos y revuelve a fuego medio-bajo",
+"Cuando estén casi listos, agrega el queso para que se derrita",
+"Calienta la tortilla, rellena, enrolla bien apretado",
+"Sirve con salsa"
+],
+"trick": "Picar las verduras súper finas hace que se integren al huevo sin sentir textura. Las endulza naturalmente."
+},
+{
+"id": "d07",
+"name": "Yogurt parfait con granola y frutos rojos",
+"emoji": "🥛",
+"category": "desayuno",
+"time": "5 min",
+"kcal": 320,
+"protein": 28,
+"carbs": 38,
+"fat": 8,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Probióticos",
+"Antioxidantes",
+"Rápido"
+],
+"description": "Capas de yogurt griego, granola crujiente y frutos rojos. Estilo café gourmet.",
+"ingredients": [
+"200g yogurt griego natural",
+"1/4 taza granola sin azúcar",
+"1 taza frutos rojos (fresa, blueberry, frambuesa)",
+"1 cda miel de agave",
+"1 cda chía",
+"1 cda almendras laminadas"
+],
+"steps": [
+"Mezcla el yogurt con la chía y deja reposar 3 min",
+"En vaso o bowl: capa de yogurt, capa de granola, capa de frutos",
+"Repite 2 veces",
+"Termina con almendras laminadas y un hilo de miel de agave"
+],
+"trick": "La chía hace el yogurt más cremoso y agrega fibra. La miel se pone solo arriba para sentir el dulce sin pasarse."
+},
+{
+"id": "d08",
+"name": "Tostadas francesas proteicas",
+"emoji": "🍞",
+"category": "desayuno",
+"time": "15 min",
+"kcal": 380,
+"protein": 28,
+"carbs": 42,
+"fat": 12,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Sabor a postre",
+"Alta proteína",
+"Saciante"
+],
+"description": "French toast con scoop de proteína en la mezcla. Sabe a desayuno de hotel.",
+"ingredients": [
+"3 rebanadas pan integral",
+"2 huevos",
+"1/2 scoop proteína vainilla",
+"1/4 taza leche almendra",
+"1 cdita canela",
+"1/2 cdita vainilla",
+"Pizca de sal",
+"Spray para sartén",
+"Para servir: berries, miel maple sin azúcar, yogurt griego"
+],
+"steps": [
+"Bate huevos, proteína, leche, canela, vainilla y sal hasta que quede lisa",
+"Remoja cada rebanada de pan 10 segundos por lado",
+"Calienta sartén antiadherente con spray",
+"Cocina cada rebanada 2 min por lado hasta dorar",
+"Sirve con berries, yogurt griego encima y un toque de maple"
+],
+"trick": "Mezclar la proteína con los huevos antes de remojar el pan agrega 20g extra de proteína sin afectar el sabor."
+},
+{
+"id": "d09",
+"name": "Quesadilla de pollo con guacamole",
+"emoji": "🫓",
+"category": "desayuno",
+"time": "15 min",
+"kcal": 440,
+"protein": 34,
+"carbs": 35,
+"fat": 18,
+"difficulty": "Fácil",
+"hidden": [
+"aguacate"
+],
+"benefits": [
+"Grasas buenas",
+"Saciante",
+"Mexicano"
+],
+"description": "Quesadilla crujiente con pollo, queso oaxaca y guacamole cremoso al lado.",
+"ingredients": [
+"2 tortillas de maíz",
+"100g pollo cocido deshebrado",
+"1/4 taza queso oaxaca",
+"1/2 aguacate",
+"1 cda cebolla picada",
+"Cilantro",
+"Limón",
+"Sal, pimienta",
+"Salsa al gusto"
+],
+"steps": [
+"Mezcla aguacate machacado con cebolla, cilantro, limón y sal para guacamole",
+"Calienta tortillas en comal",
+"Pon queso y pollo en una mitad, cierra y aplasta ligeramente",
+"Cocina 2 min por lado hasta que el queso se derrita y la tortilla dore",
+"Sirve con guacamole y salsa al lado"
+],
+"trick": "El aguacate no se 'esconde' aquí pero es la única 'verdura' de la receta y va como salsa, no como ensalada."
+},
+{
+"id": "d10",
+"name": "Omelette de jamón y queso",
+"emoji": "🍳",
+"category": "desayuno",
+"time": "10 min",
+"kcal": 390,
+"protein": 32,
+"carbs": 12,
+"fat": 24,
+"difficulty": "Fácil",
+"hidden": [
+"pimiento",
+"cebolla"
+],
+"benefits": [
+"Alta proteína",
+"Bajo carbo",
+"Rápido"
+],
+"description": "Omelette esponjoso estilo francés con jamón y queso oaxaca derretido.",
+"ingredients": [
+"3 huevos",
+"60g jamón de pavo picado",
+"1/3 taza queso oaxaca o gruyère rallado",
+"1 cda pimiento rojo picado finísimo",
+"1 cda cebollín",
+"Sal, pimienta",
+"1 cdita mantequilla",
+"Pan tostado para acompañar"
+],
+"steps": [
+"Pica el pimiento súper fino y sofríelo 1 min en mantequilla con cebollín",
+"Bate huevos con sal y pimienta",
+"Vierte huevos en sartén caliente, mueve 30 seg para distribuir",
+"Cuando casi cuajen, pon jamón y queso en una mitad",
+"Dobla con espátula y deja 30 seg más para que se derrita el queso",
+"Sirve con pan tostado"
+],
+"trick": "El pimiento sofrito en mantequilla queda suave y aporta dulzor sin textura crujiente."
+},
+{
+"id": "c01",
+"name": "Spaghetti boloñesa con verduras escondidas",
+"emoji": "🍝",
+"category": "comida",
+"time": "30 min",
+"kcal": 480,
+"protein": 32,
+"carbs": 52,
+"fat": 14,
+"difficulty": "Fácil",
+"hidden": [
+"zanahoria",
+"apio",
+"calabacita",
+"espinaca"
+],
+"benefits": [
+"Alta proteína",
+"Fibra escondida",
+"Carbos lentos"
+],
+"description": "Pasta clásica donde la salsa lleva 5 verduras licuadas. No las ves, no las pruebas.",
+"ingredients": [
+"200g carne molida 90% magra",
+"200g pasta integral",
+"2 jitomates grandes maduros",
+"1 zanahoria mediana",
+"1 rama de apio",
+"1/2 calabacita",
+"1 puño de espinaca baby",
+"1/2 cebolla blanca",
+"2 dientes de ajo",
+"1 cda aceite de oliva",
+"Sal, pimienta, orégano, albahaca",
+"Queso parmesano"
+],
+"steps": [
+"Pon a hervir agua con sal para la pasta",
+"En la licuadora: jitomate, zanahoria, apio, calabacita, espinaca, ajo, cebolla. 1 min hasta salsa roja sin grumos",
+"Sofríe la carne en sartén con aceite hasta dorar 5 min",
+"Agrega la salsa licuada a la carne. Sazona con sal, pimienta, orégano, albahaca",
+"Cocina a fuego medio 15-20 min hasta que espese",
+"Hierve la pasta al dente según el paquete",
+"Sirve la pasta con la salsa y parmesano rallado"
+],
+"trick": "La zanahoria da dulzor natural, la espinaca da color profundo, el apio da sabor umami."
+},
+{
+"id": "c02",
+"name": "Albóndigas en chipotle con arroz",
+"emoji": "🍲",
+"category": "comida",
+"time": "40 min",
+"kcal": 520,
+"protein": 36,
+"carbs": 48,
+"fat": 18,
+"difficulty": "Media",
+"hidden": [
+"zanahoria",
+"calabacita",
+"cebolla"
+],
+"benefits": [
+"Proteína alta",
+"Comfort food",
+"Sabor mexicano"
+],
+"description": "Albóndigas mexicanas en salsa de chipotle. La carne lleva calabacita rallada.",
+"ingredients": [
+"400g carne molida (mitad res, mitad cerdo)",
+"1/2 calabacita rallada exprimida",
+"1/4 cebolla picada finita",
+"1 huevo",
+"2 cdas arroz crudo",
+"Sal y pimienta",
+"SALSA:",
+"4 jitomates",
+"1 zanahoria",
+"1 cebolla",
+"2 chipotles en adobo",
+"1 ajo",
+"Caldo de pollo, sal, comino",
+"Arroz blanco para servir"
+],
+"steps": [
+"Mezcla la carne con calabacita exprimida, cebolla, huevo, arroz, sal y pimienta",
+"Forma 16 albóndigas",
+"Licúa la salsa: jitomate, zanahoria, cebolla, chipotle, ajo, caldo, especias",
+"Vierte la salsa en olla. Hierve 5 min",
+"Agrega las albóndigas. Tapa y cocina 25 min a fuego medio-bajo",
+"Sirve con arroz blanco"
+],
+"trick": "El chipotle disfraza cualquier sabor 'verdoso'. La calabacita rallada y exprimida desaparece en la carne."
+},
+{
+"id": "c03",
+"name": "Pollo en mole rojo con arroz",
+"emoji": "🍗",
+"category": "comida",
+"time": "50 min",
+"kcal": 540,
+"protein": 38,
+"carbs": 52,
+"fat": 18,
+"difficulty": "Media",
+"hidden": [
+"jitomate",
+"cebolla",
+"ajo"
+],
+"benefits": [
+"Sabor mexicano",
+"Proteína completa",
+"Tradicional"
+],
+"description": "Pollo bañado en mole rojo casero. Comfort food familiar mexicano.",
+"ingredients": [
+"2 pechugas de pollo",
+"2 jitomates",
+"1/2 cebolla",
+"2 ajos",
+"2 cdas pasta de mole rojo",
+"1 taza caldo de pollo",
+"1 cda chocolate amargo",
+"1 cdita ajonjolí",
+"Sal",
+"Arroz blanco",
+"Tortillas"
+],
+"steps": [
+"Cuece las pechugas en agua con sal hasta que estén suaves",
+"Asa los jitomates, cebolla y ajo en comal hasta que se quemen un poco",
+"Licúa con la pasta de mole y un poco de caldo",
+"Calienta la mezcla en olla, agrega más caldo y el chocolate",
+"Hierve 15 min revolviendo hasta que espese",
+"Agrega las pechugas para que tomen sabor",
+"Sirve con arroz, ajonjolí encima y tortillas"
+],
+"trick": "El chocolate amargo profundiza el sabor del mole. Asar las verduras antes de licuar les quita el 'sabor a verde'."
+},
+{
+"id": "c04",
+"name": "Lasaña de carne con vegetales licuados",
+"emoji": "🥘",
+"category": "comida",
+"time": "60 min",
+"kcal": 550,
+"protein": 35,
+"carbs": 48,
+"fat": 22,
+"difficulty": "Media",
+"hidden": [
+"espinaca",
+"zanahoria",
+"jitomate",
+"calabacita"
+],
+"benefits": [
+"Comida completa",
+"4 verduras escondidas",
+"Familiar"
+],
+"description": "Lasaña tradicional pero con todas las verduras licuadas en la salsa.",
+"ingredients": [
+"9 láminas de pasta para lasaña",
+"400g carne molida res",
+"4 jitomates",
+"2 zanahorias",
+"1 calabacita",
+"2 puños espinaca",
+"1/2 cebolla",
+"3 dientes de ajo",
+"300g queso ricotta",
+"200g mozzarella rallada",
+"50g parmesano",
+"Albahaca, orégano, sal, pimienta"
+],
+"steps": [
+"Licúa: jitomate, zanahoria, calabacita, espinaca, cebolla, ajo. Queda salsa roja",
+"Sofríe la carne molida 5 min, agrega la salsa licuada y especias. Cocina 20 min",
+"Hierve las láminas de pasta según paquete. Escurre",
+"En refractario: capa de salsa, capa de pasta, capa de ricotta, capa de mozzarella. Repite 3 veces",
+"Termina con mozzarella y parmesano arriba",
+"Hornea a 180°C por 30 min hasta dorar"
+],
+"trick": "4 verduras desaparecen en la salsa. Sabe a lasaña italiana de restaurante."
+},
+{
+"id": "c05",
+"name": "Pollo a la crema estilo Toscana",
+"emoji": "🍗",
+"category": "comida",
+"time": "25 min",
+"kcal": 480,
+"protein": 38,
+"carbs": 32,
+"fat": 22,
+"difficulty": "Fácil",
+"hidden": [
+"espinaca",
+"champiñón"
+],
+"benefits": [
+"Cremoso",
+"Hierro",
+"Italiano"
+],
+"description": "Pollo en salsa cremosa estilo restaurante italiano. La salsa lleva espinaca licuada.",
+"ingredients": [
+"2 pechugas en filetes",
+"2 puños espinaca baby",
+"100g champiñones",
+"1/2 cebolla",
+"2 ajos",
+"200ml crema light",
+"100ml caldo pollo",
+"1/4 taza parmesano",
+"1 cda aceite oliva",
+"Sal, pimienta, paprika, tomillo",
+"Pasta o arroz para servir"
+],
+"steps": [
+"Sazona el pollo con sal, pimienta, paprika. Sella en sartén 4 min por lado. Reserva",
+"En la misma sartén sofríe cebolla y ajo 2 min",
+"Agrega espinaca y champiñones. Cocina 4 min hasta reducir",
+"Pasa todo a la licuadora con caldo. Licúa 30 seg",
+"Regresa a sartén. Agrega crema y parmesano. Hierve 3 min",
+"Regresa el pollo y cocina 5 min más",
+"Sirve con pasta o arroz"
+],
+"trick": "Los champiñones licuados dan profundidad de sabor. La espinaca se vuelve invisible al licuarla con crema."
+},
+{
+"id": "c06",
+"name": "Tacos de carne asada con guacamole",
+"emoji": "🌮",
+"category": "comida",
+"time": "25 min",
+"kcal": 510,
+"protein": 36,
+"carbs": 42,
+"fat": 20,
+"difficulty": "Fácil",
+"hidden": [
+"aguacate",
+"jitomate",
+"cebolla"
+],
+"benefits": [
+"Mexicano",
+"Alta proteína",
+"Familiar"
+],
+"description": "Tacos clásicos con carne asada jugosa y guacamole hecho al momento.",
+"ingredients": [
+"300g arrachera",
+"6 tortillas de maíz",
+"1 aguacate",
+"2 jitomates",
+"1/4 cebolla",
+"1 limón",
+"Cilantro",
+"Sal, pimienta, ajo en polvo",
+"Salsa al gusto",
+"Frijoles refritos para acompañar"
+],
+"steps": [
+"Sazona la arrachera con sal, pimienta, ajo en polvo",
+"Asa en plancha o sartén caliente 3-4 min por lado",
+"Reposa 5 min y corta en tiras",
+"Mezcla aguacate machacado con jitomate picado, cebolla, cilantro, limón y sal",
+"Calienta tortillas en comal",
+"Arma tacos con carne y guacamole encima",
+"Sirve con frijoles refritos y salsa"
+],
+"trick": "El guacamole con jitomate y cebolla es la única 'verdura' visible y la mayoría la come sin problema porque va con el aguacate."
+},
+{
+"id": "c07",
+"name": "Bistec encebollado con frijoles",
+"emoji": "🥩",
+"category": "comida",
+"time": "25 min",
+"kcal": 520,
+"protein": 42,
+"carbs": 38,
+"fat": 18,
+"difficulty": "Fácil",
+"hidden": [
+"cebolla"
+],
+"benefits": [
+"Hierro alto",
+"Tradicional",
+"Saciante"
+],
+"description": "Bistec sellado con cebolla caramelizada y frijoles negros. Comida del día clásica.",
+"ingredients": [
+"2 bisteces res 200g cada uno",
+"2 cebollas grandes en julianas",
+"2 ajos picados",
+"1/2 taza caldo res",
+"1 cda salsa inglesa",
+"1 cda aceite",
+"Sal, pimienta",
+"1 taza frijoles negros refritos",
+"Tortillas",
+"Aguacate para servir"
+],
+"steps": [
+"Sazona los bisteces con sal y pimienta",
+"Sella en sartén caliente con aceite 2 min por lado. Reserva",
+"En la misma sartén sofríe la cebolla a fuego bajo 10 min hasta caramelizar",
+"Agrega ajo y cocina 1 min más",
+"Vierte caldo y salsa inglesa. Hierve 2 min",
+"Regresa los bisteces para que tomen sabor 2 min",
+"Sirve con frijoles refritos, tortillas y aguacate"
+],
+"trick": "La cebolla caramelizada es dulce y suave, no sabe a 'cebolla cruda'. Quien dice que no le gusta la cebolla la come sin problema así."
+},
+{
+"id": "c08",
+"name": "Pechuga rellena de queso y jamón",
+"emoji": "🍗",
+"category": "comida",
+"time": "35 min",
+"kcal": 480,
+"protein": 48,
+"carbs": 22,
+"fat": 22,
+"difficulty": "Media",
+"hidden": [
+"espinaca"
+],
+"benefits": [
+"Proteína altísima",
+"Jugoso",
+"Elegante"
+],
+"description": "Pechuga rellena tipo cordon bleu pero más ligero. Espinaca dentro se funde con queso.",
+"ingredients": [
+"2 pechugas de pollo",
+"100g queso manchego",
+"60g jamón de pavo",
+"1 puño espinaca baby",
+"Sal, pimienta, paprika, ajo en polvo",
+"2 cdas pan molido",
+"1 huevo",
+"2 cdas aceite",
+"Arroz para acompañar"
+],
+"steps": [
+"Abre las pechugas tipo libro y aplánalas con martillo",
+"Sazona con sal, pimienta, paprika, ajo",
+"Pon dentro: queso, jamón, espinaca",
+"Cierra y asegura con palillos",
+"Pasa por huevo batido y luego pan molido",
+"Dora en sartén con aceite 4 min por lado",
+"Termina en horno a 180°C por 12 min",
+"Sirve con arroz"
+],
+"trick": "La espinaca dentro se cocina con el calor y se mezcla con el queso derretido. Solo agrega humedad y color."
+},
+{
+"id": "c09",
+"name": "Pasta carbonara con pollo",
+"emoji": "🍝",
+"category": "comida",
+"time": "20 min",
+"kcal": 540,
+"protein": 35,
+"carbs": 52,
+"fat": 22,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Cremoso",
+"Italiano",
+"Alta proteína"
+],
+"description": "Carbonara clásica con pechuga de pollo. Salsa cremosa de huevo y queso.",
+"ingredients": [
+"200g pasta (espagueti o linguine)",
+"1 pechuga de pollo en cubos",
+"100g tocino o panceta",
+"2 huevos",
+"1/3 taza parmesano rallado",
+"2 ajos",
+"Sal, pimienta negra",
+"Perejil para decorar"
+],
+"steps": [
+"Hierve pasta al dente. Reserva 1/2 taza del agua",
+"Sazona pollo con sal y pimienta. Sella en sartén 5 min hasta dorar. Reserva",
+"En la misma sartén dora el tocino hasta crujiente",
+"Agrega ajo picado 30 seg",
+"Bate huevos con parmesano y mucha pimienta negra",
+"Apaga el fuego, agrega la pasta caliente al sartén",
+"Vierte el huevo batido y revuelve rápido (el calor residual lo cocina sin cuajar)",
+"Si está seco, agrega agua de pasta",
+"Incorpora el pollo y sirve con perejil"
+],
+"trick": "Apagar el fuego antes del huevo es clave para que quede cremoso, no revuelto. Receta sin verdura, pura proteína y carbo."
+},
+{
+"id": "c10",
+"name": "Chiles rellenos de queso",
+"emoji": "🌶",
+"category": "comida",
+"time": "45 min",
+"kcal": 480,
+"protein": 24,
+"carbs": 42,
+"fat": 24,
+"difficulty": "Media",
+"hidden": [
+"jitomate",
+"cebolla"
+],
+"benefits": [
+"Mexicano",
+"Cremoso",
+"Familiar"
+],
+"description": "Chiles poblanos rellenos de queso oaxaca con caldillo de jitomate suave.",
+"ingredients": [
+"4 chiles poblanos",
+"250g queso oaxaca",
+"3 huevos",
+"1/4 taza harina",
+"Aceite para freír",
+"CALDILLO:",
+"4 jitomates",
+"1/4 cebolla",
+"1 ajo",
+"Caldo de pollo, sal",
+"Arroz blanco para servir"
+],
+"steps": [
+"Asa los chiles directo en la flama hasta tatemarlos",
+"Mete en bolsa cerrada 10 min para que suden",
+"Pélalos y haz un corte para sacar las semillas (sin romperlos)",
+"Rellena con queso",
+"Bate las claras a punto de nieve, integra las yemas",
+"Pasa los chiles por harina y luego por huevo",
+"Fríe en aceite caliente hasta dorar",
+"CALDILLO: Licúa jitomate, cebolla, ajo. Hierve 10 min con caldo y sal",
+"Sirve los chiles bañados en caldillo con arroz"
+],
+"trick": "El caldillo lleva las verduras licuadas. Los chiles poblanos no pican (asegúrate que sean chiles poblanos no anchos)."
+},
+{
+"id": "e01",
+"name": "Pizza saludable de masa de coliflor",
+"emoji": "🍕",
+"category": "cena",
+"time": "35 min",
+"kcal": 380,
+"protein": 28,
+"carbs": 28,
+"fat": 18,
+"difficulty": "Media",
+"hidden": [
+"coliflor"
+],
+"benefits": [
+"Sin gluten",
+"Bajo carbo",
+"Cena ligera"
+],
+"description": "Pizza con masa de coliflor que NO sabe a coliflor. Crujiente como pizza normal.",
+"ingredients": [
+"1 coliflor mediana",
+"1 huevo",
+"1/2 taza mozzarella rallada",
+"1/4 taza parmesano",
+"1 cdita orégano",
+"Sal, ajo en polvo",
+"TOPPINGS:",
+"1/2 taza salsa de tomate",
+"100g mozzarella",
+"100g pollo desmenuzado o pepperoni light",
+"Albahaca fresca"
+],
+"steps": [
+"Ralla la coliflor en procesador o con rallador hasta que quede como arroz",
+"Mete al microondas 5 min. Cuando enfríe, exprime con un trapo TODA el agua",
+"Mezcla con huevo, quesos, orégano, sal, ajo",
+"Extiende sobre papel para horno formando pizza de 25cm",
+"Hornea a 220°C por 15 min hasta dorar",
+"Saca, agrega salsa, queso, toppings",
+"Hornea 8 min más"
+],
+"trick": "Exprimir BIEN el agua de la coliflor es lo más importante. Si queda húmeda, sabe a coliflor."
+},
+{
+"id": "e02",
+"name": "Hamburguesas jugosas con verdura oculta",
+"emoji": "🍔",
+"category": "cena",
+"time": "25 min",
+"kcal": 520,
+"protein": 35,
+"carbs": 35,
+"fat": 22,
+"difficulty": "Fácil",
+"hidden": [
+"calabacita",
+"cebolla",
+"espinaca"
+],
+"benefits": [
+"Jugosa",
+"Fibra escondida",
+"Familiar"
+],
+"description": "Hamburguesas con calabacita rallada — más jugosas y fibra invisible.",
+"ingredients": [
+"300g carne molida res 80/20",
+"1/2 calabacita rallada y exprimida",
+"1/4 cebolla picada finita",
+"1 puño espinaca picada finísima",
+"1 huevo",
+"2 cdas pan molido",
+"1 cdita salsa inglesa",
+"Sal, pimienta, ajo en polvo, paprika",
+"2 panes integrales",
+"Lechuga, jitomate, cebolla, mostaza, mayonesa light"
+],
+"steps": [
+"Ralla la calabacita y exprímela con las manos para sacar el agua",
+"Mezcla: carne, calabacita exprimida, cebolla, espinaca, huevo, pan molido, salsa inglesa, especias",
+"Forma 2 hamburguesas gruesas",
+"Calienta sartén o plancha a fuego alto",
+"Cocina 4 min de un lado, voltea, 4 min más",
+"Tuesta los panes ligeramente",
+"Arma con jitomate, lechuga (opcional), salsas"
+],
+"trick": "La calabacita rallada y exprimida desaparece dentro de la carne. Solo la hace más jugosa."
+},
+{
+"id": "e03",
+"name": "Pollo al curry coco con arroz",
+"emoji": "🍛",
+"category": "cena",
+"time": "30 min",
+"kcal": 520,
+"protein": 36,
+"carbs": 48,
+"fat": 18,
+"difficulty": "Fácil",
+"hidden": [
+"jitomate",
+"jengibre",
+"cebolla"
+],
+"benefits": [
+"Aromático",
+"Cremoso",
+"Especias antiinflamatorias"
+],
+"description": "Pollo en salsa cremosa de coco y curry. Sabor exótico y reconfortante.",
+"ingredients": [
+"2 pechugas en cubos",
+"1 lata leche de coco",
+"2 cdas pasta de curry rojo o amarillo",
+"2 jitomates",
+"1/2 cebolla",
+"2 ajos",
+"1 cm jengibre",
+"Caldo de pollo",
+"Sal, cilantro",
+"1 taza arroz basmati"
+],
+"steps": [
+"Licúa jitomate, cebolla, ajo y jengibre",
+"Sella el pollo en sartén con un toque de aceite 5 min. Reserva",
+"En la misma sartén calienta la pasta de curry 1 min",
+"Agrega la mezcla licuada y cocina 5 min",
+"Vierte la leche de coco y un poco de caldo",
+"Regresa el pollo. Cocina 15 min hasta espesar",
+"Sirve sobre arroz con cilantro encima"
+],
+"trick": "El curry y el coco dominan completamente. Las verduras licuadas solo dan cuerpo a la salsa."
+},
+{
+"id": "e04",
+"name": "Salmón... no espera, pescado al horno",
+"emoji": "🐟",
+"category": "cena",
+"time": "25 min",
+"kcal": 420,
+"protein": 38,
+"carbs": 18,
+"fat": 22,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Omega 3",
+"Bajo carbo",
+"Cena ligera"
+],
+"description": "Filete de mojarra o robalo con costra de hierbas y limón. Pescado que NO es salmón.",
+"ingredients": [
+"2 filetes de robalo o mojarra (200g cada uno)",
+"2 cdas pan molido",
+"2 cdas parmesano",
+"1 cda perejil picado",
+"1 ajo picado",
+"Ralladura de 1 limón",
+"2 cdas aceite oliva",
+"Sal, pimienta",
+"1 limón en gajos",
+"Arroz para servir"
+],
+"steps": [
+"Precalienta horno a 200°C",
+"Mezcla pan molido, parmesano, perejil, ajo, ralladura de limón, aceite",
+"Pon los filetes en charola con papel para horno",
+"Sazona con sal y pimienta",
+"Cubre con la mezcla de pan molido",
+"Hornea 12-15 min hasta que el pescado se desmenuze fácil",
+"Sirve con gajos de limón y arroz"
+],
+"trick": "El robalo y mojarra son pescados blancos suaves, MUY diferentes al salmón. Sabor neutro, costra crujiente."
+},
+{
+"id": "e05",
+"name": "Sopa cremosa de pollo con tortilla",
+"emoji": "🍜",
+"category": "cena",
+"time": "30 min",
+"kcal": 420,
+"protein": 34,
+"carbs": 35,
+"fat": 15,
+"difficulty": "Fácil",
+"hidden": [
+"jitomate",
+"cebolla",
+"chile"
+],
+"benefits": [
+"Reconfortante",
+"Hidratante",
+"Mexicano"
+],
+"description": "Sopa azteca cremosa con pollo y tortilla frita. Caldo lleno de sabor.",
+"ingredients": [
+"1 pechuga de pollo cocida y deshebrada",
+"4 jitomates",
+"1/4 cebolla",
+"2 ajos",
+"1 chile pasilla seco",
+"6 tazas caldo de pollo",
+"2 tortillas en tiras y fritas",
+"Aguacate",
+"Queso fresco",
+"Crema",
+"Cilantro"
+],
+"steps": [
+"Asa los jitomates, cebolla y ajo en comal",
+"Hidrata el chile pasilla en agua caliente 5 min",
+"Licúa todo con un poco de caldo",
+"Cocina la salsa licuada en olla 5 min",
+"Agrega el caldo y el pollo deshebrado",
+"Hierve 10 min",
+"Sirve con tortilla frita encima, aguacate, queso, crema y cilantro"
+],
+"trick": "El chile pasilla da sabor profundo sin picar mucho. El caldo licuado se siente cremoso sin necesidad de crema."
+},
+{
+"id": "e06",
+"name": "Tacos de pescado con coleslaw cremoso",
+"emoji": "🌮",
+"category": "cena",
+"time": "20 min",
+"kcal": 480,
+"protein": 32,
+"carbs": 42,
+"fat": 18,
+"difficulty": "Fácil",
+"hidden": [
+"repollo",
+"zanahoria"
+],
+"benefits": [
+"Omega 3",
+"Crujiente",
+"Fresco"
+],
+"description": "Tacos estilo Baja con pescado empanizado y coleslaw cremoso (verduras picadas finas).",
+"ingredients": [
+"300g filete de pescado blanco",
+"1/2 taza pan molido",
+"1/4 taza harina",
+"1 huevo",
+"Sal, pimienta, paprika",
+"6 tortillas de maíz",
+"COLESLAW:",
+"1 taza repollo morado picado finísimo",
+"1/2 zanahoria rallada finísima",
+"2 cdas mayonesa",
+"1 cda yogurt griego",
+"1 cda jugo de limón",
+"Sal",
+"Para servir: aguacate, salsa picante"
+],
+"steps": [
+"Corta el pescado en tiras",
+"Pasa por harina, luego por huevo, luego por pan molido con paprika y sal",
+"Fríe en aceite caliente 3 min hasta dorar",
+"COLESLAW: pica el repollo finísimo, ralla zanahoria. Mezcla con mayo, yogurt, limón, sal. Reposa 10 min",
+"Calienta tortillas",
+"Arma tacos con pescado, coleslaw, aguacate",
+"Sirve con salsa picante"
+],
+"trick": "El coleslaw lleva las verduras picadas FINISIMAS y bañadas en mayo cremosa. Es como salsa, no se siente como ensalada."
+},
+{
+"id": "e07",
+"name": "Sushi rolls caseros de pollo y aguacate",
+"emoji": "🍣",
+"category": "cena",
+"time": "30 min",
+"kcal": 420,
+"protein": 28,
+"carbs": 52,
+"fat": 12,
+"difficulty": "Media",
+"hidden": [],
+"benefits": [
+"Divertido",
+"Bajo grasa",
+"Original"
+],
+"description": "Sushi casero estilo California con pollo, queso crema y aguacate. Sin pescado crudo.",
+"ingredients": [
+"1 taza arroz para sushi cocido",
+"2 cdas vinagre arroz",
+"1 pechuga de pollo cocida",
+"1/2 aguacate en tiras",
+"2 cdas queso crema",
+"100g queso crema light",
+"2 hojas alga nori",
+"Salsa de soya",
+"Wasabi (opcional)",
+"Jengibre encurtido"
+],
+"steps": [
+"Mezcla arroz cocido con vinagre",
+"Coloca alga nori en tapete de bambú",
+"Extiende capa fina de arroz dejando 2cm sin cubrir en un extremo",
+"Pon tiras de pollo, aguacate y queso crema",
+"Enrolla apretado con el tapete",
+"Corta en 8 piezas con cuchillo mojado",
+"Sirve con soya, wasabi y jengibre"
+],
+"trick": "Sushi sin pescado crudo y con sabores que conoces. Aguacate y queso crema son la única 'verdura' suave."
+},
+{
+"id": "e08",
+"name": "Quesadillas de hongos con queso oaxaca",
+"emoji": "🫓",
+"category": "cena",
+"time": "15 min",
+"kcal": 420,
+"protein": 22,
+"carbs": 38,
+"fat": 22,
+"difficulty": "Fácil",
+"hidden": [
+"champiñón",
+"epazote"
+],
+"benefits": [
+"Vegetariano",
+"Rápido",
+"Sabor mexicano"
+],
+"description": "Quesadillas con hongos guisados estilo mexicano y queso oaxaca derretido.",
+"ingredients": [
+"4 tortillas grandes",
+"200g hongos rebanados",
+"200g queso oaxaca",
+"1/4 cebolla picada",
+"1 ajo picado",
+"2 hojas epazote",
+"1 chile serrano picado finito (opcional)",
+"Sal",
+"Aceite",
+"Salsa al gusto"
+],
+"steps": [
+"Sofríe cebolla y ajo en aceite 2 min",
+"Agrega hongos rebanados, sal y epazote",
+"Cocina 8 min hasta que reduzcan y doren",
+"Si quieres picante, agrega chile serrano",
+"Calienta tortilla en comal",
+"Pon queso y hongos en una mitad",
+"Cierra y cocina 2 min por lado",
+"Sirve con salsa"
+],
+"trick": "Los hongos guisados así saben a carne. El epazote es muy mexicano y no sabe a 'verde'."
+},
+{
+"id": "e09",
+"name": "Wrap de pavo y aguacate",
+"emoji": "🌯",
+"category": "cena",
+"time": "10 min",
+"kcal": 420,
+"protein": 32,
+"carbs": 38,
+"fat": 15,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Rápido",
+"Portátil",
+"Equilibrado"
+],
+"description": "Wrap rápido con pavo, queso, aguacate y mayonesa de chipotle. Cena lista en 10 min.",
+"ingredients": [
+"1 tortilla integral grande",
+"100g pavo en rebanadas",
+"1 rebanada queso panela o manchego",
+"1/2 aguacate en rebanadas",
+"1 cda mayonesa",
+"1/2 chipotle en adobo picado",
+"Sal",
+"1/4 jitomate en rebanadas finas (opcional)"
+],
+"steps": [
+"Mezcla mayonesa con chipotle picado",
+"Calienta la tortilla 30 seg en comal",
+"Unta la mayonesa de chipotle",
+"Acomoda pavo, queso, aguacate y jitomate",
+"Sazona con sal",
+"Enrolla apretado y corta a la mitad",
+"Sirve frío o caliente"
+],
+"trick": "La mayo de chipotle hace que sepa a algo elaborado en 10 minutos. El aguacate da cremosidad sin nada que se sienta a verdura."
+},
+{
+"id": "e10",
+"name": "Pollo asado con puré de papa",
+"emoji": "🍗",
+"category": "cena",
+"time": "35 min",
+"kcal": 520,
+"protein": 38,
+"carbs": 48,
+"fat": 18,
+"difficulty": "Fácil",
+"hidden": [
+"coliflor"
+],
+"benefits": [
+"Familiar",
+"Comfort food",
+"Saciante"
+],
+"description": "Pollo dorado con puré cremoso. El puré lleva 50% coliflor pero no se nota.",
+"ingredients": [
+"2 muslos o piernas de pollo",
+"Sal, pimienta, paprika, ajo en polvo",
+"1 cda mantequilla",
+"PURÉ:",
+"2 papas medianas",
+"1/2 coliflor mediana",
+"1/4 taza leche tibia",
+"2 cdas mantequilla",
+"1/4 taza queso parmesano",
+"Sal, pimienta blanca, nuez moscada"
+],
+"steps": [
+"Sazona el pollo. Hornea 30 min a 200°C con mantequilla por encima",
+"PURÉ: cuece papas y coliflor en agua con sal hasta blandas (15 min)",
+"Escurre BIEN (importante para que el puré no quede aguado)",
+"Aplasta o licúa con leche, mantequilla, parmesano, nuez moscada",
+"Sazona con sal y pimienta blanca",
+"Sirve el pollo con puré al lado"
+],
+"trick": "La coliflor cocida y aplastada se mezcla totalmente con la papa. La nuez moscada y el parmesano disfrazan completamente el sabor."
+},
+{
+"id": "s01",
+"name": "Smoothie verde sabor piña colada",
+"emoji": "🥤",
+"category": "snack",
+"time": "5 min",
+"kcal": 280,
+"protein": 22,
+"carbs": 32,
+"fat": 8,
+"difficulty": "Fácil",
+"hidden": [
+"espinaca",
+"aguacate"
+],
+"benefits": [
+"Antioxidantes",
+"Grasas buenas",
+"Refrescante"
+],
+"description": "Espinaca + aguacate dentro de un smoothie que sabe a piña colada.",
+"ingredients": [
+"1 puño espinaca baby",
+"1/4 aguacate maduro",
+"1/2 plátano congelado",
+"1/2 taza piña en cubos",
+"1 taza leche de almendra sin azúcar",
+"1 scoop proteína vainilla",
+"1 cdita coco rallado",
+"Hielo al gusto"
+],
+"steps": [
+"Pon todo en la licuadora",
+"Licúa 1 min a velocidad alta hasta súper cremoso",
+"Sirve frío"
+],
+"trick": "La piña enmascara totalmente la espinaca. El aguacate da cremosidad sin sabor."
+},
+{
+"id": "s02",
+"name": "Brownies con frijol negro",
+"emoji": "🍫",
+"category": "snack",
+"time": "40 min",
+"kcal": 180,
+"protein": 8,
+"carbs": 22,
+"fat": 8,
+"difficulty": "Fácil",
+"hidden": [
+"frijol negro"
+],
+"benefits": [
+"Proteína",
+"Fibra",
+"Sin harina"
+],
+"description": "Brownies fudgy súper chocolatosos. Llevan frijol negro en lugar de harina.",
+"ingredients": [
+"1 lata de frijoles negros (escurridos y enjuagados)",
+"3 huevos",
+"1/3 taza cocoa sin azúcar",
+"1/3 taza miel de agave",
+"1/4 taza aceite de coco derretido",
+"1 cdita esencia de vainilla",
+"1/2 cdita polvo para hornear",
+"Pizca de sal",
+"1/2 taza chispas chocolate amargo"
+],
+"steps": [
+"Precalienta horno a 180°C",
+"En licuadora: procesa los frijoles bien escurridos hasta puré",
+"Agrega huevos, cocoa, agave, aceite, vainilla, polvo, sal. Licúa 30 seg",
+"Incorpora chispas con espátula",
+"Vierte en molde 20×20cm engrasado",
+"Hornea 25-28 min",
+"Deja enfriar antes de cortar"
+],
+"trick": "El cocoa amargo y el chocolate dominan completamente. Sirve fríos."
+},
+{
+"id": "s03",
+"name": "Hummus de frijol con totopos",
+"emoji": "🫘",
+"category": "snack",
+"time": "10 min",
+"kcal": 280,
+"protein": 12,
+"carbs": 35,
+"fat": 12,
+"difficulty": "Fácil",
+"hidden": [
+"ajo"
+],
+"benefits": [
+"Fibra",
+"Proteína vegetal",
+"Mexicano"
+],
+"description": "Hummus mexicano con frijoles negros en lugar de garbanzo. Cremoso, con totopos.",
+"ingredients": [
+"1 lata frijoles negros escurridos",
+"2 cdas tahini",
+"2 ajos",
+"Jugo de 1 limón",
+"2 cdas aceite oliva",
+"1/2 cdita comino",
+"Sal",
+"Para servir: totopos integrales, paprika"
+],
+"steps": [
+"Licúa frijoles, tahini, ajo, limón, aceite, comino, sal",
+"Procesa hasta que quede súper cremoso (1-2 min)",
+"Si está espeso, agrega un poco de agua",
+"Sirve en bowl con un hilo de aceite y paprika",
+"Acompaña con totopos integrales"
+],
+"trick": "El comino y limón disfrazan el sabor a frijol y lo hace tipo hummus mediterráneo."
+},
+{
+"id": "s04",
+"name": "Mug cake de chocolate proteico",
+"emoji": "🍫",
+"category": "snack",
+"time": "3 min",
+"kcal": 250,
+"protein": 24,
+"carbs": 28,
+"fat": 7,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Postre",
+"Alta proteína",
+"Rápido"
+],
+"description": "Pastel de chocolate en taza, listo en 90 segundos. 24g proteína.",
+"ingredients": [
+"1 scoop proteína chocolate",
+"1 cda cocoa",
+"2 cdas avena en polvo",
+"1 cdita polvo para hornear",
+"1/4 taza leche almendra",
+"1 huevo",
+"1 cdita miel agave",
+"Pizca sal",
+"2 cdas chispas chocolate"
+],
+"steps": [
+"Mezcla todo en una taza grande con tenedor",
+"Asegúrate que no queden grumos",
+"Microondas 90 segundos",
+"Deja reposar 30 seg",
+"Come tibio con cuchara"
+],
+"trick": "El cocoa amargo + proteína de chocolate hacen que sepa a brownie sin sentir 'a proteína'."
+},
+{
+"id": "s05",
+"name": "Edamames con sal de mar",
+"emoji": "🫛",
+"category": "snack",
+"time": "5 min",
+"kcal": 180,
+"protein": 17,
+"carbs": 15,
+"fat": 7,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Proteína vegetal",
+"Fibra",
+"Bajo grasa"
+],
+"description": "Edamames japoneses con sal de mar. Snack proteico y entretenido para botanear.",
+"ingredients": [
+"1 taza edamames congelados (con vaina)",
+"2 tazas agua",
+"Sal de mar gruesa",
+"Salsa de soya (opcional)",
+"Limón (opcional)"
+],
+"steps": [
+"Hierve agua en olla",
+"Agrega edamames y cocina 4-5 min",
+"Escurre",
+"Esparce con sal de mar gruesa",
+"Sirve calientes",
+"Comes apretando la vaina con los dientes para sacar las semillas"
+],
+"trick": "La textura de morder la vaina es divertida y te tarda más, te sacia psicológicamente con pocas calorías."
+},
+{
+"id": "s06",
+"name": "Yogurt griego con miel y nueces",
+"emoji": "🥛",
+"category": "snack",
+"time": "2 min",
+"kcal": 280,
+"protein": 22,
+"carbs": 24,
+"fat": 12,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Probióticos",
+"Rápido",
+"Saciante"
+],
+"description": "Snack rápido y elegante. Yogurt griego cremoso con nueces caramelizadas.",
+"ingredients": [
+"200g yogurt griego natural",
+"1 cda miel",
+"1 cda nueces de Castilla picadas",
+"1/2 cdita canela",
+"2 fresas en rebanadas",
+"Pizca de sal de mar"
+],
+"steps": [
+"Sirve el yogurt en bowl",
+"Espolvorea canela",
+"Vierte la miel encima",
+"Decora con fresas y nueces",
+"Pizca de sal de mar para resaltar el dulce"
+],
+"trick": "La sal de mar arriba hace que el dulce sepa más profundo. Truco de pastelería gourmet."
+},
+{
+"id": "s07",
+"name": "Galletas de avena y plátano",
+"emoji": "🍪",
+"category": "snack",
+"time": "20 min",
+"kcal": 140,
+"protein": 6,
+"carbs": 22,
+"fat": 4,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Sin azúcar",
+"Fibra",
+"Para llevar"
+],
+"description": "Galletas blanditas hechas con plátano. Solo 3 ingredientes base. Sin azúcar.",
+"ingredients": [
+"2 plátanos maduros machacados",
+"1 taza avena en hojuelas",
+"1/4 taza chispas de chocolate",
+"1 cdita canela",
+"1 cda mantequilla de almendra",
+"Pizca sal",
+"Opcional: pasas, nueces, semillas"
+],
+"steps": [
+"Precalienta horno a 180°C",
+"Machaca los plátanos",
+"Mezcla con avena, chispas, canela, mantequilla almendra, sal",
+"Forma 12 galletas con cuchara en charola con papel para horno",
+"Hornea 15 min",
+"Deja enfriar 5 min antes de mover"
+],
+"trick": "El plátano maduro funciona como azúcar y aglutinante. Perfecto para llevar al trabajo."
+},
+{
+"id": "s08",
+"name": "Bocadillos de jamón y queso",
+"emoji": "🍖",
+"category": "snack",
+"time": "5 min",
+"kcal": 220,
+"protein": 18,
+"carbs": 3,
+"fat": 15,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Bajo carbo",
+"Alta proteína",
+"Rápido"
+],
+"description": "Rollitos de jamón con queso crema y especias. Snack keto rápido.",
+"ingredients": [
+"6 rebanadas jamón de pavo",
+"100g queso crema",
+"1 cdita eneldo o cebollín picado",
+"Pimienta negra",
+"2 cdas semillas de sésamo (opcional)"
+],
+"steps": [
+"Mezcla queso crema con eneldo y pimienta",
+"Extiende sobre cada rebanada de jamón",
+"Enrolla apretado",
+"Pasa los rollos por sésamo si quieres",
+"Refrigera 10 min para que tomen forma",
+"Corta cada rollo en 3 piezas"
+],
+"trick": "El queso crema con eneldo da sabor gourmet. Snack ideal para no romper la dieta."
+},
+{
+"id": "s09",
+"name": "Trail mix casero",
+"emoji": "🥜",
+"category": "snack",
+"time": "5 min",
+"kcal": 260,
+"protein": 8,
+"carbs": 22,
+"fat": 18,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Energía sostenida",
+"Grasas buenas",
+"Para viajes"
+],
+"description": "Mezcla de frutos secos, semillas y un toque dulce. Para tener en el coche.",
+"ingredients": [
+"1/4 taza almendras",
+"1/4 taza nueces",
+"2 cdas semillas calabaza",
+"2 cdas chispas chocolate amargo",
+"1/4 taza arándanos secos",
+"1 cda coco rallado",
+"Pizca sal de mar"
+],
+"steps": [
+"Mezcla todo en un bowl",
+"Distribuye en frasco hermético o bolsitas individuales",
+"Porción recomendada: 1/4 taza"
+],
+"trick": "Los arándanos y chocolate dan dulce sin azúcar añadida. Las semillas alargan la saciedad."
+},
+{
+"id": "s10",
+"name": "Pudín de chía sabor café",
+"emoji": "☕",
+"category": "snack",
+"time": "5 min + reposo",
+"kcal": 220,
+"protein": 12,
+"carbs": 22,
+"fat": 10,
+"difficulty": "Fácil",
+"hidden": [],
+"benefits": [
+"Omega 3",
+"Saciante",
+"Original"
+],
+"description": "Pudín de semillas de chía con café espresso. Sabe a tiramisú saludable.",
+"ingredients": [
+"3 cdas semillas de chía",
+"1 taza leche almendra",
+"1 cda café instantáneo",
+"1 cdita cocoa",
+"2 cditas miel agave",
+"1/2 scoop proteína vainilla",
+"Pizca sal",
+"Para servir: cocoa, granola"
+],
+"steps": [
+"Mezcla todo en frasco con tapa",
+"Agita bien por 30 segundos",
+"Reposa 5 min, agita otra vez para evitar grumos",
+"Refrigera mínimo 4 horas (mejor toda la noche)",
+"Sirve con cocoa espolvoreada y granola encima"
+],
+"trick": "El café y cocoa hacen que sepa a tiramisú. La chía absorbe líquido y crea textura cremosa de pudín."
+}
 ];
 
 const FOOD_EMOJIS = {
@@ -1275,6 +2616,7 @@ function App() {
   const [exCtx,setExCtx] = React.useState("");
   const [macroDetail,setMacroDetail] = React.useState(null);
   const [showRecipe,setShowRecipe] = React.useState(null);
+  const [recipeCategory,setRecipeCategory] = React.useState("desayuno");
   const [dailyMenu,setDailyMenu] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_daily_menu"))||null; } catch(e){return null;} });
   const [generatingMenu,setGeneratingMenu] = React.useState(false);
   const [waterLog,setWaterLog] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem("mc_water_log"))||{}; } catch(e){return {};} });
@@ -1601,7 +2943,7 @@ ${todayEntries.length>0?"Comidas ya registradas: "+todayEntries.map(e=>e.meal+":
 
 Genera el menú considerando lo que YA comió (no repetir) y completar lo que falta.`;
 
-      const response = await api(key, DAILY_MENU_PROMPT(profData.profile), [{role:"user",content:ctx}], 2000);
+      const response = await api(key, DAILY_MENU_PROMPT(profData.profile, profData.target, macroTargets), [{role:"user",content:ctx}], 2500);
       const json = JSON.parse(response.replace(/```json|```/g,"").trim());
       setDailyMenu({timestamp:Date.now(), date:todayKey(), ...json});
     } catch(e) {
@@ -1837,6 +3179,19 @@ Genera el reporte semanal según las instrucciones.`;
                           <span style={{fontSize:10,color:"var(--ink-soft)",background:"var(--bg-sunken)",padding:"2px 7px",borderRadius:6,fontWeight:600}}>C {m.carbs}g</span>
                           <span style={{fontSize:10,color:"var(--ink-soft)",background:"var(--bg-sunken)",padding:"2px 7px",borderRadius:6,fontWeight:600}}>G {m.fat}g</span>
                         </div>
+                        {m.ingredients && m.ingredients.length>0 && (
+                          <div style={{marginTop:10,padding:"10px 12px",background:"var(--bg-sunken)",borderRadius:10}}>
+                            <div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:800,letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Ingredientes</div>
+                            <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                              {m.ingredients.map((ing,j)=>(
+                                <div key={j} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"var(--ink)"}}>
+                                  <div style={{width:4,height:4,borderRadius:"50%",background:"var(--mint)",flexShrink:0}}/>
+                                  <div style={{flex:1,lineHeight:1.4}}>{ing}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {m.highlight && (
                           <div style={{fontSize:11,color:"var(--mint-deep)",marginTop:8,fontWeight:600,fontStyle:"italic"}}>💡 {m.highlight}</div>
                         )}
@@ -1844,6 +3199,20 @@ Genera el reporte semanal según las instrucciones.`;
                     </div>
                   </div>
                 ))}
+
+                {dailyMenu.shoppingList && dailyMenu.shoppingList.length>0 && (
+                  <div style={{marginTop:14,padding:"14px 16px",background:"linear-gradient(135deg,rgba(16,185,129,0.06),rgba(8,145,178,0.04))",border:"1px solid var(--mint-soft)",borderRadius:14}}>
+                    <div style={{fontSize:10,color:"var(--mint-deep)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:10}}>🛒 Lista de compras del día</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      {dailyMenu.shoppingList.map((item,j)=>(
+                        <div key={j} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"var(--ink)"}}>
+                          <div style={{width:14,height:14,borderRadius:4,border:"1.5px solid var(--mint)",flexShrink:0}}/>
+                          <div style={{flex:1,lineHeight:1.4}}>{item}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {dailyMenu.totals && (
                   <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginTop:14,padding:"14px 0 0",borderTop:"1px solid var(--line)"}}>
@@ -2151,29 +3520,41 @@ Genera el reporte semanal según las instrucciones.`;
           <div style={{padding:"14px 18px",background:"linear-gradient(135deg,rgba(8,145,178,0.08),rgba(16,185,129,0.06))",border:"1px solid var(--line)",borderRadius:18,display:"flex",alignItems:"center",gap:14}}>
             <div style={{fontSize:30}}>👨‍🍳</div>
             <div style={{flex:1}}>
-              <div className="serif" style={{fontSize:22,color:"var(--ink)",lineHeight:1.1}}>Recetas inteligentes</div>
-              <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:4,lineHeight:1.4,fontWeight:500}}>Comida rica con verduras escondidas. Pensado para tu meta.</div>
+              <div className="serif" style={{fontSize:22,color:"var(--ink)",lineHeight:1.1}}>Recetario</div>
+              <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:4,lineHeight:1.4,fontWeight:500}}>40 recetas. Sin verduras visibles, sin salmón.</div>
             </div>
           </div>
 
           {!showRecipe && (
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {RECIPES.map(r => (
-                <button key={r.id} type="button" onClick={()=>setShowRecipe(r.id)} style={{padding:0,background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:18,cursor:"pointer",overflow:"hidden",textAlign:"left",WebkitTapHighlightColor:"transparent",touchAction:"manipulation",display:"flex",flexDirection:"column"}}>
-                  <div style={{height:96,background:"linear-gradient(135deg,var(--bg-sunken),var(--mint-soft))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:48}}>{r.emoji}</div>
-                  <div style={{padding:"12px 14px",flex:1,display:"flex",flexDirection:"column",gap:6}}>
-                    <div style={{fontSize:13,color:"var(--ink)",fontWeight:700,lineHeight:1.25,minHeight:32}}>{r.name}</div>
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
-                      <span style={{fontSize:10,color:"var(--primary-deep)",background:"var(--primary-soft)",padding:"2px 7px",borderRadius:6,fontWeight:700}}>{r.kcal}kcal</span>
-                      <span style={{fontSize:10,color:"var(--ink-mute)",background:"var(--bg-sunken)",padding:"2px 7px",borderRadius:6,fontWeight:600}}>⏱ {r.time}</span>
+            <>
+              {/* Category tabs */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,padding:4,background:"var(--bg-sunken)",borderRadius:14}}>
+                {[{id:"desayuno",label:"Desayuno",emoji:"☀️"},{id:"comida",label:"Comida",emoji:"🍽️"},{id:"cena",label:"Cena",emoji:"🌙"},{id:"snack",label:"Snacks",emoji:"🥨"}].map(c=>(
+                  <button key={c.id} type="button" onClick={()=>setRecipeCategory(c.id)} style={{padding:"10px 4px",borderRadius:11,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:recipeCategory===c.id?"var(--bg-elev)":"transparent",color:recipeCategory===c.id?"var(--ink)":"var(--ink-mute)",transition:"all 0.2s",boxShadow:recipeCategory===c.id?"0 2px 6px rgba(0,0,0,0.06)":"none",WebkitTapHighlightColor:"transparent",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                    <span style={{fontSize:14}}>{c.emoji}</span>
+                    <span>{c.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                {RECIPES.filter(r=>r.category===recipeCategory).map(r => (
+                  <button key={r.id} type="button" onClick={()=>setShowRecipe(r.id)} style={{padding:0,background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:18,cursor:"pointer",overflow:"hidden",textAlign:"left",WebkitTapHighlightColor:"transparent",touchAction:"manipulation",display:"flex",flexDirection:"column"}}>
+                    <div style={{height:96,background:"linear-gradient(135deg,var(--bg-sunken),var(--mint-soft))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:48}}>{r.emoji}</div>
+                    <div style={{padding:"12px 14px",flex:1,display:"flex",flexDirection:"column",gap:6}}>
+                      <div style={{fontSize:13,color:"var(--ink)",fontWeight:700,lineHeight:1.25,minHeight:32}}>{r.name}</div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
+                        <span style={{fontSize:10,color:"var(--primary-deep)",background:"var(--primary-soft)",padding:"2px 7px",borderRadius:6,fontWeight:700}}>{r.kcal}kcal</span>
+                        <span style={{fontSize:10,color:"var(--mint-deep)",background:"var(--mint-soft)",padding:"2px 7px",borderRadius:6,fontWeight:700}}>P {r.protein}g</span>
+                      </div>
+                      {r.hidden && r.hidden.length>0 && (
+                        <div style={{fontSize:10,color:"var(--mint-deep)",fontWeight:600,marginTop:2}}>🥷 Esconde {r.hidden.length} {r.hidden.length===1?"verdura":"verduras"}</div>
+                      )}
                     </div>
-                    {r.hidden && r.hidden.length>0 && (
-                      <div style={{fontSize:10,color:"var(--mint-deep)",fontWeight:600,marginTop:2}}>🥷 Esconde {r.hidden.length} {r.hidden.length===1?"verdura":"verduras"}</div>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
 
           {showRecipe && (() => {
