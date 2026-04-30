@@ -2779,9 +2779,7 @@ function App() {
     setWeightHistory([{date:todayKey(),weight:p.weight}]);
     setChat([{r:"a",t:`Hola ${p.name}. Soy tu coach personal. Pregúntame lo que quieras.`}]);
   }}/>;
-  if (showProfile) return <Onboarding initial={profile} onSave={p=>{setProfile(p);setShowProfile(false);}}/>;
-
-  // Smart greeting based on memory (only first render)
+  // Smart greeting based on memory (only first render) - MUST be before any conditional return
   React.useEffect(()=>{
     if (profile && chat.length===1 && coachMemory.length>0) {
       const lastMem = coachMemory[coachMemory.length-1];
@@ -2791,6 +2789,8 @@ function App() {
     }
     // eslint-disable-next-line
   },[]);
+
+  if (showProfile) return <Onboarding initial={profile} onSave={p=>{setProfile(p);setShowProfile(false);}}/>;
 
   const profData = buildProfile(profile);
   const macroTargets = getMacroTargets(profData.target,profile.weight);
