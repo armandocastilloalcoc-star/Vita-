@@ -2006,15 +2006,67 @@ async function apiVisionMulti(k, sys, prompt, photos, max=2500) {
 
 function fileToBase64(file) {
   return new Promise((resolve,reject)=>{
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      const base64 = result.split(",")[1];
-      const mediaType = result.split(";")[0].split(":")[1];
-      resolve({base64,mediaType});
+    // For non-images (PDF, etc), use direct base64
+    if (!file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        const base64 = result.split(",")[1];
+        const mediaType = result.split(";")[0].split(":")[1];
+        resolve({base64,mediaType});
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    // For images: compress to stay under API limits and improve speed
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        // Calculate new dimensions: max 1600px on longest side
+        let { width, height } = img;
+        const maxSize = 1600;
+        if (width > maxSize || height > maxSize) {
+          if (width > height) {
+            height = Math.round(height * maxSize / width);
+            width = maxSize;
+          } else {
+            width = Math.round(width * maxSize / height);
+            height = maxSize;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Try progressively lower quality until under 4MB (safe margin under 5MB limit)
+        const tryQuality = (q) => {
+          const dataUrl = canvas.toDataURL("image/jpeg", q);
+          const base64 = dataUrl.split(",")[1];
+          const sizeBytes = base64.length * 0.75; // approximate size
+          if (sizeBytes > 4*1024*1024 && q > 0.3) {
+            return tryQuality(q - 0.1);
+          }
+          return {base64, mediaType: "image/jpeg"};
+        };
+
+        URL.revokeObjectURL(url);
+        resolve(tryQuality(0.85));
+      } catch(err) {
+        URL.revokeObjectURL(url);
+        reject(err);
+      }
     };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("No se pudo cargar la imagen"));
+    };
+    img.src = url;
   });
 }
 
