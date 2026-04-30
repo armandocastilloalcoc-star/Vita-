@@ -4196,7 +4196,78 @@ Genera el reporte semanal según las instrucciones.`;
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+// Global error catcher - shows ANY error as visible banner (debug mode)
+window.addEventListener("error", (e) => {
+  try {
+    const banner = document.createElement("div");
+    banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#dc2626;color:#fff;padding:16px;font-family:system-ui;font-size:13px;line-height:1.5;border-bottom:3px solid #991b1b;max-height:60vh;overflow:auto;";
+    banner.innerHTML = '<strong>⚠️ Error en Vita:</strong><br/>' +
+      '<div style="margin-top:8px;font-family:monospace;font-size:11px;background:rgba(0,0,0,0.2);padding:8px;border-radius:6px;word-break:break-word;">' +
+      (e.message || "Error desconocido").replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '<br/>' +
+      'Archivo: ' + ((e.filename||"?")+"").split("/").slice(-1)[0] + '<br/>' +
+      'Línea: ' + (e.lineno||"?") + ':' + (e.colno||"?") +
+      '</div>' +
+      '<button onclick="this.parentElement.remove()" style="margin-top:10px;padding:8px 14px;background:#fff;color:#dc2626;border:none;border-radius:6px;font-weight:700;cursor:pointer;">Cerrar</button>';
+    document.body.insertBefore(banner, document.body.firstChild);
+  } catch(err){}
+});
+
+window.addEventListener("unhandledrejection", (e) => {
+  try {
+    const banner = document.createElement("div");
+    banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#ea580c;color:#fff;padding:16px;font-family:system-ui;font-size:13px;line-height:1.5;border-bottom:3px solid #c2410c;max-height:60vh;overflow:auto;";
+    banner.innerHTML = '<strong>⚠️ Promesa rechazada:</strong><br/>' +
+      '<div style="margin-top:8px;font-family:monospace;font-size:11px;background:rgba(0,0,0,0.2);padding:8px;border-radius:6px;word-break:break-word;">' +
+      String(e.reason?.message || e.reason || "Sin detalle").replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) +
+      '</div>' +
+      '<button onclick="this.parentElement.remove()" style="margin-top:10px;padding:8px 14px;background:#fff;color:#ea580c;border:none;border-radius:6px;font-weight:700;cursor:pointer;">Cerrar</button>';
+    document.body.insertBefore(banner, document.body.firstChild);
+  } catch(err){}
+});
+
+class ErrorBoundary extends React.Component {
+  constructor(props){
+    super(props);
+    this.state = {error: null};
+  }
+  static getDerivedStateFromError(error) {
+    return {error};
+  }
+  componentDidCatch(error, info) {
+    console.error("Error en Vita:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      const errorMsg = String(this.state.error?.message || this.state.error || "Error desconocido");
+      const stack = String(this.state.error?.stack || "").split("\n").slice(0,8).join("\n");
+      return React.createElement("div", {style:{padding:24,fontFamily:"system-ui, -apple-system, sans-serif",color:"#0a1f1c",lineHeight:1.6,minHeight:"100vh",background:"#fafdfc"}},
+        React.createElement("h2", {style:{color:"#dc2626",marginBottom:12}}, "⚠️ Algo falló en Vita"),
+        React.createElement("div", {style:{fontSize:13,color:"#64748b",marginBottom:8}}, "Error:"),
+        React.createElement("pre", {style:{background:"#fef2f2",padding:12,borderRadius:8,fontSize:12,overflow:"auto",whiteSpace:"pre-wrap",border:"1px solid #fecaca",color:"#991b1b",wordBreak:"break-word"}}, errorMsg),
+        React.createElement("details", {style:{marginTop:12,fontSize:11}},
+          React.createElement("summary", {style:{cursor:"pointer",color:"#64748b"}}, "Ver detalles técnicos"),
+          React.createElement("pre", {style:{background:"#f5f5f5",padding:8,borderRadius:6,fontSize:10,overflow:"auto",marginTop:8,wordBreak:"break-word",whiteSpace:"pre-wrap"}}, stack)
+        ),
+        React.createElement("p", {style:{fontSize:13,marginTop:16,color:"#475569"}}, "Mándale screenshot a Armando."),
+        React.createElement("div", {style:{display:"flex",gap:10,marginTop:20,flexWrap:"wrap"}},
+          React.createElement("button", {onClick:()=>window.location.reload(), style:{padding:"12px 20px",background:"#0891b2",color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:"pointer"}}, "Recargar"),
+          React.createElement("button", {onClick:()=>{
+            try {
+              const keys = ["mc_profile","mc_log","mc_plans","mc_water_log","mc_weight_history","mc_coach_memory","mc_weekly_report","mc_daily_menu"];
+              if (confirm("¿Reiniciar app y borrar datos locales?")) {
+                keys.forEach(k => { try { localStorage.removeItem(k); } catch(e){} });
+                window.location.reload();
+              }
+            } catch(e){}
+          }, style:{padding:"12px 20px",background:"#fee2e2",color:"#991b1b",border:"1px solid #fecaca",borderRadius:10,fontSize:14,fontWeight:700,cursor:"pointer"}}, "Reiniciar app")
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(ErrorBoundary, null, React.createElement(App)));
 </script>
 </body>
 </html>
