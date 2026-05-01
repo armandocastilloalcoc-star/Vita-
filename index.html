@@ -191,6 +191,20 @@ TIP: [consejo]`;
 const CHAT_PROMPT = (prof) => prof + `
 Eres coach experto: nutriologo + entrenador. Max 3 parrafos. Si pregunta medico delicado, recomienda consultar medico. Conoces el historial del usuario, usa esa informacion para dar respuestas personalizadas y hacer seguimiento.`;
 
+const ENTRY_ANALYSIS_PROMPT = (prof) => prof + `
+
+Analiza esta comida específica que el usuario registró. Sé directo, honesto y útil. Sin rodeos.
+
+Devuelve SOLO un JSON válido (sin markdown) con esta estructura exacta:
+{
+  "verdict_type": "good" | "ok" | "bad",
+  "verdict": "Frase corta y directa: ¿es buena elección, regular o te pasaste? Sin azucarar nada.",
+  "day_impact": "Cómo afecta esta comida tu meta del día. Ejemplo: 'Esta comida sola ya consumió 45% de tus calorías y 70% de tus grasas del día.' Si te pasaste, di EN QUÉ te pasaste y POR CUÁNTO.",
+  "culprit": "Si la comida es problemática, qué item específico es el culpable. Ejemplo: 'La tortilla de harina (180kcal) y el aguacate (240kcal) representan 60% de las calorías'. Si la comida es buena, omite este campo.",
+  "alternatives": ["2-3 alternativas concretas que pudiste haber comido por la misma cantidad o menos de calorías. Sin moralizar."],
+  "next_time": "Recomendación práctica para próxima vez. Concreta, sin clichés. Ejemplo: 'Para tu meta de bajar peso, esta comida hubiera funcionado mejor sin la tortilla extra. Te ahorrabas 180kcal sin perder sabor.'"
+}`;
+
 const DAILY_MENU_PROMPT = (prof, target, macroT) => prof + `
 
 Genera un MENÚ COMPLETO del día (desayuno + comida + cena + 2 snacks) BALANCEADO para CERRAR los círculos diarios.
@@ -2736,6 +2750,12 @@ function App() {
   const [exCtx,setExCtx] = React.useState("");
   const [macroDetail,setMacroDetail] = React.useState(null);
   const [showRecipe,setShowRecipe] = React.useState(null);
+  const [foodDetail,setFoodDetail] = React.useState(null);
+  const [foodAnalysis,setFoodAnalysis] = React.useState({});
+  const [analyzingFood,setAnalyzingFood] = React.useState(false);
+  const [entryDetail,setEntryDetail] = React.useState(null);
+  const [entryAnalysis,setEntryAnalysis] = React.useState(null);
+  const [analyzingEntry,setAnalyzingEntry] = React.useState(false);
   // Unregister any existing service workers (cleanup from previous version)
   React.useEffect(()=>{
     if ("serviceWorker" in navigator) {
@@ -3138,6 +3158,111 @@ AGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
     setWaterLog(prev => ({...prev, [k]: Math.max(0, (prev[k]||0) + ml)}));
   };
 
+  const analyzeEntry = async (entry) => {
+    if (!key) { setShowKey(true); return; }
+    setAnalyzingEntry(true);
+    setEntryAnalysis(null);
+    try {
+      const tg = macroTargets;
+      const dayEntries = foodLog[entry.dateKey || todayKey()] || [];
+      const dayTotals = sumDay(dayEntries);
+      const ctx = `OBJETIVOS DEL DÍA: ${profData.target}kcal | Proteína ${tg.protein}g | Carbos ${tg.carbs}g | Grasas ${tg.fat}g | Fibra ${tg.fiber}g | Azúcar máx ${tg.sugar}g | Sodio máx 2300mg
+
+COMIDA A ANALIZAR (${entry.meal}):
+Texto original: ${entry.originalText}
+Items: ${(entry.items||[]).map(i=>`${i.name} (${i.kcal||0}kcal P:${i.protein||0}g C:${i.carbs||0}g G:${i.fat||0}g)`).join(", ")}
+Totales: ${Math.round(entry.totals.kcal)}kcal | P:${Math.round(entry.totals.protein)}g | C:${Math.round(entry.totals.carbs)}g | G:${Math.round(entry.totals.fat)}g | Azúcar:${Math.round(entry.totals.sugar||0)}g | Fibra:${Math.round(entry.totals.fiber||0)}g | Sodio:${Math.round(entry.totals.sodium||0)}mg
+
+TOTAL DEL DÍA HASTA AHORA: ${Math.round(dayTotals.kcal)}kcal | P:${Math.round(dayTotals.protein)}g | C:${Math.round(dayTotals.carbs)}g | G:${Math.round(dayTotals.fat)}g | Azúcar:${Math.round(dayTotals.sugar||0)}g | Sodio:${Math.round(dayTotals.sodium||0)}mg
+
+OTRAS COMIDAS DEL DÍA: ${dayEntries.filter(e=>e.id!==entry.id).map(e=>e.meal+": "+e.originalText+" ("+Math.round(e.totals.kcal)+"kcal)").join(" | ")||"Ninguna"}
+
+Analiza esta comida específica.`;
+
+      const response = await api(key, ENTRY_ANALYSIS_PROMPT(profData.profile), [{role:"user",content:ctx}], 1500);
+      let jsonStr = response.replace(/```json|```/g,"").trim();
+      const fb = jsonStr.indexOf("{"), lb = jsonStr.lastIndexOf("}");
+      if (fb >= 0 && lb > fb) jsonStr = jsonStr.substring(fb, lb+1);
+      const json = JSON.parse(jsonStr);
+      setEntryAnalysis(json);
+    } catch(e) {
+      setEntryAnalysis({error: "No pude analizar: "+e.message.slice(0,150)});
+    }
+    setAnalyzingEntry(false);
+  };
+
+  const analyzeFoodEntry = async (entry) => {
+    if (!key) { setShowKey(true); return; }
+    if (foodAnalysis[entry.id]) {
+      // Already analyzed, just show
+      setFoodDetail(entry);
+      return;
+    }
+    setFoodDetail(entry);
+    setAnalyzingFood(true);
+    try {
+      const tg = macroTargets;
+      const pctKcal = Math.round((entry.totals.kcal / profData.target) * 100);
+      const pctProtein = Math.round((entry.totals.protein / tg.protein) * 100);
+      const pctCarbs = Math.round((entry.totals.carbs / tg.carbs) * 100);
+      const pctFat = Math.round((entry.totals.fat / tg.fat) * 100);
+      const pctSugar = entry.totals.sugar ? Math.round((entry.totals.sugar / tg.sugar) * 100) : 0;
+      const pctSodium = entry.totals.sodium ? Math.round((entry.totals.sodium / 2300) * 100) : 0;
+
+      const itemsDetail = (entry.items||[]).map(i => `${i.name} (${i.qty||"1 porción"}): ${Math.round(i.kcal||0)}kcal, P${Math.round(i.protein||0)}g, C${Math.round(i.carbs||0)}g, G${Math.round(i.fat||0)}g${i.sugar?", azúcar "+Math.round(i.sugar)+"g":""}${i.sodium?", sodio "+Math.round(i.sodium)+"mg":""}`).join("\n");
+
+      const ctx = `Analiza esta comida del usuario y dale un desglose honesto y útil.
+
+COMIDA: ${entry.meal} - "${entry.originalText||"sin descripción"}"
+TIMESTAMP: ${new Date(entry.timestamp).toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"})}
+
+ITEMS:
+${itemsDetail}
+
+TOTALES DE ESTA COMIDA:
+- Calorías: ${Math.round(entry.totals.kcal)}kcal (${pctKcal}% del día)
+- Proteína: ${Math.round(entry.totals.protein)}g (${pctProtein}% de meta diaria)
+- Carbos: ${Math.round(entry.totals.carbs)}g (${pctCarbs}% de meta diaria)
+- Grasas: ${Math.round(entry.totals.fat)}g (${pctFat}% de meta diaria)
+${entry.totals.sugar ? `- Azúcar: ${Math.round(entry.totals.sugar)}g (${pctSugar}% del límite diario)` : ""}
+${entry.totals.sodium ? `- Sodio: ${Math.round(entry.totals.sodium)}mg (${pctSodium}% del límite)` : ""}
+${entry.totals.fiber ? `- Fibra: ${Math.round(entry.totals.fiber)}g` : ""}
+
+CONTEXTO DEL USUARIO:
+- Meta diaria: ${profData.target}kcal
+- Objetivo: bajar de peso (déficit moderado)
+- Targets: P${tg.protein}g, C${tg.carbs}g, G${tg.fat}g, fibra ${tg.fiber}g, azúcar máx ${tg.sugar}g
+
+Devuelve SOLO un JSON válido sin markdown:
+{
+  "verdict": "una palabra: 'excelente', 'buena', 'regular', 'pasada' o 'mala'",
+  "verdictColor": "color hex segun veredicto: excelente=#10b981, buena=#0891b2, regular=#f59e0b, pasada=#ea580c, mala=#dc2626",
+  "summary": "1 oración honesta sobre esta comida",
+  "culprits": [
+    {"item": "nombre del item problemático o 'Ninguno'", "reason": "por qué es el principal contribuidor a un macro alto", "impact": "qué macro afecta y cuánto"}
+  ],
+  "wins": ["2-3 cosas BUENAS de esta comida (ej: 'buena fuente de proteína', 'fibra adecuada')"],
+  "warnings": ["1-3 cosas que podrían ser problema (vacío si no hay)"],
+  "swap": "1 sugerencia concreta de cómo mejorar esta misma comida la próxima vez (ej: 'cambia la tortilla de harina por maíz, ahorras 80kcal')",
+  "context": "1 oración con contexto: '¿esta comida te conviene a esta hora del día? ¿es estratégica?'"
+}`;
+
+      const response = await api(key, "Eres un nutriólogo honesto y directo, en español mexicano. Sin sugar-coating pero sin ser cruel. Análisis útil y accionable.", [{role:"user",content:ctx}], 1500);
+
+      let jsonStr = response.replace(/```json|```/g,"").trim();
+      const firstBrace = jsonStr.indexOf("{");
+      const lastBrace = jsonStr.lastIndexOf("}");
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        jsonStr = jsonStr.substring(firstBrace, lastBrace+1);
+      }
+      const json = JSON.parse(jsonStr);
+      setFoodAnalysis(prev => ({...prev, [entry.id]: json}));
+    } catch(e) {
+      setFoodAnalysis(prev => ({...prev, [entry.id]: {error: e.message}}));
+    }
+    setAnalyzingFood(false);
+  };
+
   const generateDailyMenu = async () => {
     if (!key) { setShowKey(true); return; }
     setGeneratingMenu(true);
@@ -3272,6 +3397,238 @@ Genera el reporte semanal según las instrucciones.`;
       )}
 
       {showFoodModal && <FoodLogModal onSave={saveFoodEntry} onClose={()=>setShowFoodModal(false)} apiKey={key} askKey={()=>setShowKey(true)}/>}
+
+      {entryDetail && (
+        <div onClick={()=>setEntryDetail(null)} style={{position:"fixed",inset:0,background:"rgba(10,31,28,0.6)",backdropFilter:"blur(8px)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={(e)=>e.stopPropagation()} style={{background:"var(--bg-elev)",borderTopLeftRadius:28,borderTopRightRadius:28,width:"100%",maxWidth:640,maxHeight:"92vh",overflow:"auto",padding:"24px 22px 30px",position:"relative"}}>
+            <div style={{position:"absolute",top:14,right:14}}>
+              <button onClick={()=>setEntryDetail(null)} style={{background:"var(--bg-sunken)",border:"none",borderRadius:"50%",width:34,height:34,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:"var(--ink-mute)",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>×</button>
+            </div>
+
+            <div style={{display:"flex",alignItems:"flex-start",gap:14,marginBottom:18,paddingRight:40}}>
+              <div style={{width:60,height:60,borderRadius:18,background:"var(--bg-sunken)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,flexShrink:0}}>{entryDetail.items && entryDetail.items.length>0 ? getFoodEmoji(entryDetail.items[0].name) : MEAL_ICONS[entryDetail.meal]||"🍽️"}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:10,color:"var(--primary-deep)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase"}}>{entryDetail.meal}</div>
+                <div className="serif" style={{fontSize:22,color:"var(--ink)",lineHeight:1.2,marginTop:2}}>{entryDetail.originalText && entryDetail.originalText.length<60 ? entryDetail.originalText : (entryDetail.items&&entryDetail.items.map(i=>i.name).join(", "))}</div>
+                <div style={{fontSize:11,color:"var(--ink-mute)",marginTop:4,fontWeight:500}}>{new Date(entryDetail.timestamp).toLocaleTimeString("es-MX",{hour:"numeric",minute:"2-digit"})}</div>
+              </div>
+            </div>
+
+            {/* Macros breakdown */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:18,padding:"14px 12px",background:"var(--bg-sunken)",borderRadius:14}}>
+              <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:800,letterSpacing:0.5,textTransform:"uppercase"}}>Kcal</div><div style={{fontSize:18,color:"var(--primary)",fontWeight:800,marginTop:3}}>{Math.round(entryDetail.totals.kcal)}</div></div>
+              <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:800,letterSpacing:0.5,textTransform:"uppercase"}}>Prot</div><div style={{fontSize:18,color:"var(--mint-deep)",fontWeight:800,marginTop:3}}>{Math.round(entryDetail.totals.protein)}<span style={{fontSize:10,color:"var(--ink-mute)"}}>g</span></div></div>
+              <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:800,letterSpacing:0.5,textTransform:"uppercase"}}>Carb</div><div style={{fontSize:18,color:"var(--ink)",fontWeight:800,marginTop:3}}>{Math.round(entryDetail.totals.carbs)}<span style={{fontSize:10,color:"var(--ink-mute)"}}>g</span></div></div>
+              <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:800,letterSpacing:0.5,textTransform:"uppercase"}}>Gras</div><div style={{fontSize:18,color:"var(--ink)",fontWeight:800,marginTop:3}}>{Math.round(entryDetail.totals.fat)}<span style={{fontSize:10,color:"var(--ink-mute)"}}>g</span></div></div>
+            </div>
+
+            {/* Items list */}
+            {entryDetail.items && entryDetail.items.length>0 && (
+              <div style={{marginBottom:18}}>
+                <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:10}}>Lo que comiste</div>
+                {entryDetail.items.map((it,i)=>(
+                  <div key={i} style={{padding:"12px 0",borderBottom:i<entryDetail.items.length-1?"1px solid var(--line)":"none",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:600,lineHeight:1.3}}>{it.name}</div>
+                      {it.qty && <div style={{fontSize:11,color:"var(--ink-mute)",marginTop:2,fontWeight:500}}>{it.qty}</div>}
+                      <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+                        <span style={{fontSize:10,color:"var(--mint-deep)",background:"var(--mint-soft)",padding:"2px 6px",borderRadius:5,fontWeight:700}}>P {Math.round(it.protein||0)}g</span>
+                        <span style={{fontSize:10,color:"var(--ink-soft)",background:"var(--bg-sunken)",padding:"2px 6px",borderRadius:5,fontWeight:600}}>C {Math.round(it.carbs||0)}g</span>
+                        <span style={{fontSize:10,color:"var(--ink-soft)",background:"var(--bg-sunken)",padding:"2px 6px",borderRadius:5,fontWeight:600}}>G {Math.round(it.fat||0)}g</span>
+                      </div>
+                    </div>
+                    <div style={{fontSize:15,color:"var(--primary)",fontWeight:800,whiteSpace:"nowrap"}}>{Math.round(it.kcal||0)}<span style={{fontSize:10,color:"var(--ink-mute)",fontWeight:600,marginLeft:2}}>kcal</span></div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Analyze button */}
+            {!entryAnalysis && !analyzingEntry && (
+              <button onClick={()=>analyzeEntry(entryDetail)} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,var(--mint),var(--primary))",border:"none",borderRadius:14,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",letterSpacing:0.3,boxShadow:"0 6px 20px -6px rgba(8,145,178,0.4)",WebkitTapHighlightColor:"transparent"}}>🔍 Analizar esta comida</button>
+            )}
+
+            {analyzingEntry && (
+              <div style={{padding:"30px 20px",textAlign:"center"}}>
+                <Dots/>
+                <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:10,fontWeight:500}}>Analizando tu comida…</div>
+              </div>
+            )}
+
+            {entryAnalysis && entryAnalysis.error && (
+              <div style={{padding:"14px 16px",background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:14,color:"var(--danger)",fontSize:13,fontWeight:600}}>{entryAnalysis.error}</div>
+            )}
+
+            {entryAnalysis && !entryAnalysis.error && (
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {entryAnalysis.verdict && (
+                  <div style={{padding:"14px 16px",background:entryAnalysis.verdict_type==="bad"?"rgba(239,68,68,0.06)":entryAnalysis.verdict_type==="good"?"var(--mint-soft)":"rgba(245,158,11,0.06)",border:entryAnalysis.verdict_type==="bad"?"1px solid rgba(239,68,68,0.2)":entryAnalysis.verdict_type==="good"?"1px solid rgba(16,185,129,0.25)":"1px solid rgba(245,158,11,0.2)",borderRadius:14}}>
+                    <div style={{fontSize:10,letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:6,color:entryAnalysis.verdict_type==="bad"?"var(--danger)":entryAnalysis.verdict_type==="good"?"var(--mint-deep)":"var(--warn)"}}>{entryAnalysis.verdict_type==="bad"?"⚠️ Te pasaste":entryAnalysis.verdict_type==="good"?"✓ Buena elección":"⚡ Atención"}</div>
+                    <div style={{fontSize:14,color:"var(--ink)",lineHeight:1.5,fontWeight:600}}>{entryAnalysis.verdict}</div>
+                  </div>
+                )}
+
+                {entryAnalysis.day_impact && (
+                  <div style={{padding:"14px 16px",background:"var(--bg-sunken)",borderRadius:14}}>
+                    <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:8}}>📊 Impacto en tu día</div>
+                    <div style={{fontSize:13,color:"var(--ink)",lineHeight:1.5}}>{entryAnalysis.day_impact}</div>
+                  </div>
+                )}
+
+                {entryAnalysis.culprit && (
+                  <div style={{padding:"14px 16px",background:"rgba(245,158,11,0.06)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:14}}>
+                    <div style={{fontSize:10,color:"#d97706",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:8}}>🎯 Lo que más pesó</div>
+                    <div style={{fontSize:13,color:"var(--ink)",lineHeight:1.5}}>{entryAnalysis.culprit}</div>
+                  </div>
+                )}
+
+                {entryAnalysis.alternatives && entryAnalysis.alternatives.length>0 && (
+                  <div style={{padding:"14px 16px",background:"linear-gradient(135deg,rgba(16,185,129,0.06),rgba(8,145,178,0.04))",border:"1px solid var(--mint-soft)",borderRadius:14}}>
+                    <div style={{fontSize:10,color:"var(--mint-deep)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:10}}>💡 Alternativas mejores</div>
+                    {entryAnalysis.alternatives.map((alt,i)=>(
+                      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"6px 0",borderTop:i>0?"1px solid var(--mint-soft)":"none"}}>
+                        <div style={{width:5,height:5,borderRadius:"50%",background:"var(--mint)",marginTop:8,flexShrink:0}}/>
+                        <div style={{flex:1,fontSize:13,color:"var(--ink)",lineHeight:1.5}}>{alt}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {entryAnalysis.next_time && (
+                  <div style={{padding:"14px 16px",background:"var(--primary-soft)",borderRadius:14}}>
+                    <div style={{fontSize:10,color:"var(--primary-deep)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:8}}>🚀 Para la próxima</div>
+                    <div style={{fontSize:13,color:"var(--ink)",lineHeight:1.5}}>{entryAnalysis.next_time}</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {foodDetail && (
+        <div onClick={()=>setFoodDetail(null)} style={{position:"fixed",inset:0,background:"rgba(10,31,28,0.5)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"var(--bg-elev)",borderRadius:"24px 24px 0 0",width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"22px 22px 100px",boxShadow:"0 -10px 40px rgba(0,0,0,0.15)"}}>
+            {/* Header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase"}}>{foodDetail.meal} · {new Date(foodDetail.timestamp).toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"})}</div>
+                <div className="serif" style={{fontSize:22,color:"var(--ink)",lineHeight:1.2,marginTop:4}}>{foodDetail.items && foodDetail.items.length>0 ? foodDetail.items.map(i=>i.name).join(", ") : "Comida"}</div>
+              </div>
+              <button onClick={()=>setFoodDetail(null)} style={{background:"var(--bg-sunken)",border:"none",borderRadius:"50%",width:32,height:32,fontSize:18,color:"var(--ink-mute)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginLeft:10}}>×</button>
+            </div>
+
+            {/* Big stats */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:18,padding:"14px 0",borderTop:"1px solid var(--line)",borderBottom:"1px solid var(--line)"}}>
+              <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:800,letterSpacing:0.5}}>KCAL</div><div style={{fontSize:18,color:"var(--primary)",fontWeight:800,marginTop:2}}>{Math.round(foodDetail.totals.kcal)}</div><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:600}}>{Math.round((foodDetail.totals.kcal/profData.target)*100)}% del día</div></div>
+              <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:800,letterSpacing:0.5}}>PROT</div><div style={{fontSize:18,color:"var(--mint-deep)",fontWeight:800,marginTop:2}}>{Math.round(foodDetail.totals.protein)}<span style={{fontSize:10,color:"var(--ink-mute)"}}>g</span></div><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:600}}>{Math.round((foodDetail.totals.protein/macroTargets.protein)*100)}%</div></div>
+              <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:800,letterSpacing:0.5}}>CARB</div><div style={{fontSize:18,color:"var(--ink)",fontWeight:800,marginTop:2}}>{Math.round(foodDetail.totals.carbs)}<span style={{fontSize:10,color:"var(--ink-mute)"}}>g</span></div><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:600}}>{Math.round((foodDetail.totals.carbs/macroTargets.carbs)*100)}%</div></div>
+              <div style={{textAlign:"center"}}><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:800,letterSpacing:0.5}}>GRAS</div><div style={{fontSize:18,color:"var(--ink)",fontWeight:800,marginTop:2}}>{Math.round(foodDetail.totals.fat)}<span style={{fontSize:10,color:"var(--ink-mute)"}}>g</span></div><div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:600}}>{Math.round((foodDetail.totals.fat/macroTargets.fat)*100)}%</div></div>
+            </div>
+
+            {/* Items breakdown */}
+            {foodDetail.items && foodDetail.items.length>0 && (
+              <div style={{marginBottom:18}}>
+                <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:10}}>Desglose por ingrediente</div>
+                {foodDetail.items.map((item,i) => (
+                  <div key={i} style={{padding:"10px 0",borderBottom:i<foodDetail.items.length-1?"1px solid var(--line)":"none"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:600,flex:1}}>{item.name}</div>
+                      <div style={{fontSize:13,color:"var(--primary)",fontWeight:700,marginLeft:10}}>{Math.round(item.kcal||0)}<span style={{fontSize:10,color:"var(--ink-mute)",fontWeight:500,marginLeft:2}}>kcal</span></div>
+                    </div>
+                    {item.qty && <div style={{fontSize:11,color:"var(--ink-mute)",marginBottom:4}}>{item.qty}</div>}
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {item.protein > 0 && <span style={{fontSize:10,color:"var(--mint-deep)",background:"var(--mint-soft)",padding:"2px 7px",borderRadius:6,fontWeight:700}}>P {Math.round(item.protein)}g</span>}
+                      {item.carbs > 0 && <span style={{fontSize:10,color:"var(--ink-soft)",background:"var(--bg-sunken)",padding:"2px 7px",borderRadius:6,fontWeight:600}}>C {Math.round(item.carbs)}g</span>}
+                      {item.fat > 0 && <span style={{fontSize:10,color:"var(--ink-soft)",background:"var(--bg-sunken)",padding:"2px 7px",borderRadius:6,fontWeight:600}}>G {Math.round(item.fat)}g</span>}
+                      {item.sugar > 0 && <span style={{fontSize:10,color:"#d97706",background:"rgba(245,158,11,0.1)",padding:"2px 7px",borderRadius:6,fontWeight:700}}>🍯 {Math.round(item.sugar)}g</span>}
+                      {item.sodium > 200 && <span style={{fontSize:10,color:"var(--ink-soft)",background:"var(--bg-sunken)",padding:"2px 7px",borderRadius:6,fontWeight:600}}>🧂 {Math.round(item.sodium)}mg</span>}
+                      {item.fiber > 0 && <span style={{fontSize:10,color:"var(--mint-deep)",background:"var(--mint-soft)",padding:"2px 7px",borderRadius:6,fontWeight:600}}>🌾 {Math.round(item.fiber)}g</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* AI Analysis */}
+            <div style={{marginTop:14}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase"}}>🧠 Análisis del coach</div>
+              </div>
+
+              {analyzingFood && !foodAnalysis[foodDetail.id] && (
+                <div style={{padding:"30px 20px",textAlign:"center",background:"var(--bg-sunken)",borderRadius:14}}>
+                  <Dots/>
+                  <div style={{fontSize:12,color:"var(--ink-mute)",marginTop:10,fontWeight:500}}>Analizando esta comida…</div>
+                </div>
+              )}
+
+              {foodAnalysis[foodDetail.id] && !foodAnalysis[foodDetail.id].error && (() => {
+                const a = foodAnalysis[foodDetail.id];
+                return (
+                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    {/* Verdict */}
+                    <div style={{padding:"14px 16px",background:`linear-gradient(135deg, ${a.verdictColor||"#0891b2"}15, ${a.verdictColor||"#0891b2"}08)`,border:`1px solid ${a.verdictColor||"#0891b2"}30`,borderRadius:14}}>
+                      <div style={{fontSize:10,color:a.verdictColor||"var(--primary)",fontWeight:800,letterSpacing:1.2,textTransform:"uppercase",marginBottom:4}}>{a.verdict}</div>
+                      <div style={{fontSize:14,color:"var(--ink)",lineHeight:1.5,fontWeight:500}}>{a.summary}</div>
+                    </div>
+
+                    {/* Wins */}
+                    {a.wins && a.wins.length>0 && (
+                      <div style={{padding:"12px 14px",background:"var(--mint-soft)",borderRadius:12}}>
+                        <div style={{fontSize:10,color:"var(--mint-deep)",letterSpacing:1,fontWeight:800,marginBottom:8}}>✓ A FAVOR</div>
+                        {a.wins.map((w,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"3px 0"}}>
+                            <div style={{color:"var(--mint-deep)",fontSize:11,fontWeight:800,marginTop:1}}>•</div>
+                            <div style={{flex:1,fontSize:13,color:"var(--ink)",lineHeight:1.4}}>{w}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Warnings + Culprits */}
+                    {((a.warnings && a.warnings.length>0) || (a.culprits && a.culprits.length>0 && a.culprits[0].item !== "Ninguno")) && (
+                      <div style={{padding:"12px 14px",background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12}}>
+                        <div style={{fontSize:10,color:"#d97706",letterSpacing:1,fontWeight:800,marginBottom:8}}>⚠️ EN CONTRA</div>
+                        {a.warnings && a.warnings.map((w,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"3px 0"}}>
+                            <div style={{color:"#d97706",fontSize:11,fontWeight:800,marginTop:1}}>•</div>
+                            <div style={{flex:1,fontSize:13,color:"var(--ink)",lineHeight:1.4}}>{w}</div>
+                          </div>
+                        ))}
+                        {a.culprits && a.culprits.map((c,i) => c.item !== "Ninguno" && (
+                          <div key={"c"+i} style={{marginTop:8,padding:"10px 12px",background:"var(--bg-elev)",borderRadius:10}}>
+                            <div style={{fontSize:11,color:"#d97706",fontWeight:800,marginBottom:3}}>🎯 Principal contribuidor: {c.item}</div>
+                            <div style={{fontSize:12,color:"var(--ink)",lineHeight:1.4,marginBottom:4}}>{c.reason}</div>
+                            {c.impact && <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:600}}>{c.impact}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Swap suggestion */}
+                    {a.swap && (
+                      <div style={{padding:"12px 14px",background:"linear-gradient(135deg,rgba(8,145,178,0.06),rgba(16,185,129,0.06))",border:"1px solid var(--primary-soft)",borderRadius:12}}>
+                        <div style={{fontSize:10,color:"var(--primary-deep)",letterSpacing:1,fontWeight:800,marginBottom:6}}>💡 PARA LA PRÓXIMA</div>
+                        <div style={{fontSize:13,color:"var(--ink)",lineHeight:1.5}}>{a.swap}</div>
+                      </div>
+                    )}
+
+                    {/* Context */}
+                    {a.context && (
+                      <div style={{fontSize:12,color:"var(--ink-mute)",lineHeight:1.5,fontStyle:"italic",padding:"6px 4px"}}>{a.context}</div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {foodAnalysis[foodDetail.id] && foodAnalysis[foodDetail.id].error && (
+                <div style={{padding:14,background:"rgba(239,68,68,0.05)",borderRadius:12,fontSize:12,color:"var(--danger)"}}>No pude generar el análisis. {foodAnalysis[foodDetail.id].error}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* HEADER */}
       <div className="glass" style={{padding:"18px 20px 14px",position:"sticky",top:0,zIndex:50,background:"rgba(240,250,250,0.7)",borderBottom:"1px solid var(--line)"}}>
@@ -3556,18 +3913,18 @@ Genera el reporte semanal según las instrucciones.`;
               </div>
             ) : (
               dayEntries.sort((a,b)=>a.timestamp-b.timestamp).map(entry => (
-                <div key={entry.id} className="fade tap-effect" style={{padding:"14px 0",borderBottom:"1px solid var(--line)",display:"flex",gap:14,cursor:"pointer"}}>
+                <div key={entry.id} className="fade tap-effect" onClick={()=>{setEntryDetail({...entry,dateKey:selectedDate});setEntryAnalysis(null);}} style={{padding:"14px 0",borderBottom:"1px solid var(--line)",display:"flex",gap:14,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
                   <div style={{fontSize:24,flexShrink:0,width:42,height:42,borderRadius:12,background:"var(--bg-sunken)",display:"flex",alignItems:"center",justifyContent:"center"}}>{entry.items && entry.items.length>0 ? getFoodEmoji(entry.items[0].name) : MEAL_ICONS[entry.meal]||"🍽️"}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                       <div style={{fontSize:11,color:"var(--ink-mute)",letterSpacing:1,fontWeight:700,textTransform:"uppercase"}}>{entry.meal}</div>
                       <div style={{display:"flex",gap:8,alignItems:"center"}}>
                         <span style={{fontSize:15,color:"var(--primary)",fontWeight:800}}>{Math.round(entry.totals.kcal)}<span style={{fontSize:10,color:"var(--ink-mute)",fontWeight:600,marginLeft:2}}>kcal</span></span>
-                        <button onClick={()=>deleteFoodEntry(entry.id)} style={{background:"transparent",border:"none",color:"var(--ink-mute)",cursor:"pointer",fontSize:18,padding:"0 4px",fontWeight:300}}>×</button>
+                        <button onClick={(e)=>{e.stopPropagation();deleteFoodEntry(entry.id);}} style={{background:"transparent",border:"none",color:"var(--ink-mute)",cursor:"pointer",fontSize:18,padding:"0 4px",fontWeight:300}}>×</button>
                       </div>
                     </div>
                     <div style={{fontSize:14,color:"var(--ink)",marginBottom:5,lineHeight:1.4,fontWeight:500}}>{entry.items&&entry.items.map(i=>i.name).join(", ")}</div>
-                    <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:500}}>P:{Math.round(entry.totals.protein)}g · C:{Math.round(entry.totals.carbs)}g · G:{Math.round(entry.totals.fat)}g</div>
+                    <div style={{fontSize:11,color:"var(--ink-mute)",fontWeight:500}}>P:{Math.round(entry.totals.protein)}g · C:{Math.round(entry.totals.carbs)}g · G:{Math.round(entry.totals.fat)}g · <span style={{color:"var(--primary)",fontWeight:600}}>tap para análisis →</span></div>
                   </div>
                 </div>
               ))
