@@ -189,7 +189,16 @@ BALANCE: Comiste ~XXXX - quemas ~XXX = deficit ~XXX
 TIP: [consejo]`;
 
 const CHAT_PROMPT = (prof) => prof + `
-Eres coach experto: nutriologo + entrenador. Max 3 parrafos. Si pregunta medico delicado, recomienda consultar medico. Conoces el historial del usuario, usa esa informacion para dar respuestas personalizadas y hacer seguimiento.`;
+Eres coach experto: nutriologo + entrenador. Max 3 parrafos. Si pregunta medico delicado, recomienda consultar medico. Conoces el historial del usuario, usa esa informacion para dar respuestas personalizadas y hacer seguimiento.
+
+CAPACIDADES IMPORTANTES:
+- Tienes web_search para acceder a CUALQUIER URL, noticia, tweet, página, artículo
+- Puedes leer PDFs, imágenes, archivos de texto que el usuario adjunte
+- Si el usuario te pasa una URL en su mensaje, USA web_search inmediatamente para leerla
+- Si el usuario te pega texto largo de un menú, artículo, tweet, etc - analízalo
+- NUNCA digas frases como "no puedo abrir", "no tengo acceso", "no puedo leer", "no soy capaz de"
+- Si algo es realmente imposible (ej. video), responde lo más útil posible con la info disponible y propón alternativas
+- Tu actitud: "déjame ver qué puedo hacer" en lugar de "no puedo"`;
 
 const ENTRY_ANALYSIS_PROMPT = (prof) => prof + `
 
@@ -2984,27 +2993,48 @@ AGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
     try {
       let responseText;
       if (currentAtt) {
-        // Build message with attachment
+        // Build message with attachment - support EVERYTHING
         const userContent = [];
+        let textPrefix = cin || "Analiza esto y dime qué relevancia tiene para mí.";
+
         if (currentAtt.mediaType.startsWith("image/")) {
           userContent.push({type:"image",source:{type:"base64",media_type:currentAtt.mediaType,data:currentAtt.base64}});
         } else if (currentAtt.mediaType === "application/pdf") {
           userContent.push({type:"document",source:{type:"base64",media_type:"application/pdf",data:currentAtt.base64}});
+        } else if (currentAtt.isText && currentAtt.textContent) {
+          // Embed text content directly in the message
+          textPrefix = (cin || "Analiza este archivo:") + "\n\n--- CONTENIDO DEL ARCHIVO \"" + (currentAtt.fileName||"archivo") + "\" ---\n" + currentAtt.textContent + "\n--- FIN DEL ARCHIVO ---";
+        } else if (currentAtt.unsupportedType) {
+          // For truly unsupported types (zip, doc, etc) - explain to user via the text
+          textPrefix = (cin || "") + "\n\n[El usuario adjuntó un archivo: " + (currentAtt.fileName||"archivo") + " de tipo " + currentAtt.mediaType + ". No puedes abrirlo directamente, pero responde lo mejor que puedas con base en el nombre del archivo y lo que el usuario te diga.]";
         }
-        userContent.push({type:"text",text:cin||"Analiza este archivo y dime qué relevancia tiene para mi plan de alimentación, salud o ejercicio."});
+        userContent.push({type:"text",text:textPrefix});
 
         // Include conversation history (text only) plus new message with attachment
         const history = chat.slice(-8).map(m=>({role:m.r==="u"?"user":"assistant",content:m.t}));
         const allMsgs = [...history, {role:"user",content:userContent}];
 
+        // Use Sonnet for vision/PDF, Haiku for text-only (faster)
+        const useModel = (currentAtt.mediaType.startsWith("image/") || currentAtt.mediaType === "application/pdf")
+          ? "claude-sonnet-4-5"
+          : "claude-haiku-4-5-20251001";
+
         const r = await fetch("https://api.anthropic.com/v1/messages",{
           method:"POST",
           headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-          body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1200,system:sysPrompt,messages:allMsgs})
+          body:JSON.stringify({
+            model:useModel,
+            max_tokens:1500,
+            system:sysPrompt+"\n\nTienes acceso a la herramienta web_search. Si el usuario adjunta o menciona una URL, USA web_search para acceder al contenido. Si pregunta por información actual, USA web_search. NUNCA digas que no puedes abrir, leer o acceder a algo - siempre encuentra una forma de ayudar.",
+            messages:allMsgs,
+            tools:[{type:"web_search_20250305",name:"web_search",max_uses:3}]
+          })
         });
         const d = await r.json();
         if (d.error) throw new Error(d.error.message);
-        responseText = d.content[0].text;
+        // Extract all text blocks from response (handles tool use responses too)
+        responseText = d.content.filter(c=>c.type==="text").map(c=>c.text).join("\n").trim();
+        if (!responseText) responseText = "Procesé tu archivo pero no generé respuesta clara. ¿Qué quieres saber específicamente?";
       } else {
         const msgs = nc.slice(-10).map(m=>({role:m.r==="u"?"user":"assistant",content:m.t}));
         // Streaming with Haiku for fastest response
@@ -3014,7 +3044,7 @@ AGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
           body:JSON.stringify({
             model:"claude-haiku-4-5-20251001",
             max_tokens:1000,
-            system:sysPrompt+"\n\nTienes acceso a la herramienta web_search. ÚSALA cuando el usuario pregunte por información actual: noticias, datos recientes, marcas/productos específicos, precios, estudios nuevos, recetas que no conozcas, restaurantes, etc. Cuando uses la herramienta, integra la información naturalmente en tu respuesta sin mencionar que buscaste.",
+            system:sysPrompt+"\n\nTienes acceso a la herramienta web_search. ÚSALA AGRESIVAMENTE cuando: (1) el usuario incluye una URL en su mensaje - léela; (2) pregunta por noticias/tweets/artículos/contenido externo; (3) pregunta por información actual o específica que no sabes con certeza; (4) menciona algo de lo que no tengas información completa. NUNCA digas que no puedes abrir/leer/acceder a algo - usa web_search. Integra la información naturalmente sin mencionar que buscaste.",
             messages:msgs,
             stream:true,
             tools:[{type:"web_search_20250305",name:"web_search",max_uses:3}]
@@ -3124,14 +3154,49 @@ AGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
     const file = e.target.files[0];
     if (!file) return;
     setShowAttachMenu(false);
-    if (file.size > 10*1024*1024) {
-      alert("Archivo muy grande. Máximo 10MB.");
+    if (file.size > 25*1024*1024) {
+      alert("Archivo muy grande. Máximo 25MB.");
       return;
     }
     try {
+      // Determine file type and processing strategy
+      const name = (file.name||"").toLowerCase();
+      const type = file.type || "";
+
+      // Text-like files: read as plain text
+      const textExtensions = [".txt",".md",".csv",".tsv",".json",".xml",".html",".htm",".rtf",".log",".js",".css",".py",".sql"];
+      const isTextFile = type.startsWith("text/") ||
+                         type === "application/json" ||
+                         type === "application/xml" ||
+                         textExtensions.some(ext => name.endsWith(ext));
+
+      if (isTextFile) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const textContent = String(reader.result||"").slice(0, 100000); // limit to 100k chars
+          setChatAttachment({
+            base64: btoa(unescape(encodeURIComponent(textContent))),
+            mediaType: "text/plain",
+            fileName: file.name,
+            textContent: textContent,
+            isText: true
+          });
+          setChatAttachPreview(file.name + " (" + Math.round(textContent.length/1000) + "k caracteres)");
+        };
+        reader.onerror = () => alert("Error leyendo archivo de texto");
+        reader.readAsText(file);
+        return;
+      }
+
+      // Images and PDFs: use existing pipeline (fileToBase64 already compresses images)
       const result = await fileToBase64(file);
-      // Store filename for non-images
       result.fileName = file.name;
+
+      // For unsupported types, still attach with a label so coach sees it as text reference
+      if (!result.mediaType.startsWith("image/") && result.mediaType !== "application/pdf") {
+        result.unsupportedType = true;
+      }
+
       setChatAttachment(result);
       if (result.mediaType.startsWith("image/")) {
         setChatAttachPreview(URL.createObjectURL(file));
@@ -3139,8 +3204,14 @@ AGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
         setChatAttachPreview(file.name);
       }
     } catch(err) {
-      alert("Error cargando archivo");
+      alert("Error cargando archivo: "+err.message);
     }
+  };
+
+  // Detect URLs in user message
+  const extractUrls = (text) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    return (text.match(urlRegex) || []).slice(0, 3); // max 3 URLs per message
   };
 
   const clearChatAttachment = () => {
@@ -4271,7 +4342,7 @@ Genera el reporte semanal según las instrucciones.`;
               <button type="button" onClick={()=>setShowAttachMenu(true)} style={{background:"var(--bg-sunken)",border:"1.5px solid var(--line)",borderRadius:18,padding:"13px 14px",color:"var(--primary)",fontSize:20,cursor:"pointer",WebkitTapHighlightColor:"transparent",touchAction:"manipulation",flexShrink:0}}>+</button>
               <input ref={chatCameraRef} type="file" accept="image/*" capture="environment" onChange={handleChatAttachment} style={{display:"none"}}/>
               <input ref={chatPhotoRef} type="file" accept="image/*" onChange={handleChatAttachment} style={{display:"none"}}/>
-              <input ref={chatFileRef} type="file" accept="application/pdf" onChange={handleChatAttachment} style={{display:"none"}}/>
+              <input ref={chatFileRef} type="file" accept="*/*" onChange={handleChatAttachment} style={{display:"none"}}/>
               <input ref={chatAnyFileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt,.csv,.xls,.xlsx" onChange={handleChatAttachment} style={{display:"none"}}/>
               <textarea rows={1} value={cin} onChange={e=>setCin(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat();}}} placeholder={chatAttachment?"Mensaje opcional…":"Pregunta lo que quieras…"} style={{...inp,flex:1,padding:"13px 16px",borderRadius:18}}/>
               <button onClick={sendChat} disabled={(!cin.trim()&&!chatAttachment)||cL} style={{background:(!cin.trim()&&!chatAttachment)||cL?"var(--bg-sunken)":"linear-gradient(135deg,var(--primary),var(--mint))",border:"none",borderRadius:18,padding:"13px 20px",color:(!cin.trim()&&!chatAttachment)||cL?"var(--ink-mute)":"#fff",fontSize:18,cursor:(!cin.trim()&&!chatAttachment)||cL?"not-allowed":"pointer",minWidth:54,boxShadow:(!cin.trim()&&!chatAttachment)||cL?"none":"0 6px 16px -6px rgba(8,145,178,0.4)"}}>↑</button>
@@ -4295,7 +4366,7 @@ Genera el reporte semanal según las instrucciones.`;
                     </button>
                     <button type="button" onClick={()=>{setShowAttachMenu(false);chatFileRef.current&&chatFileRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
                       <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,#ef4444,#dc2626)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(239,68,68,0.4)"}}>📄</div>
-                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>PDF</div>
+                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Archivo</div>
                       <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Documento</div>
                     </button>
                     <button type="button" onClick={()=>{setShowAttachMenu(false);chatAnyFileRef.current&&chatAnyFileRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
