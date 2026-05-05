@@ -4428,44 +4428,47 @@ Genera el reporte semanal según las instrucciones.`;
             )}
             <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
               <button type="button" onClick={()=>setShowAttachMenu(true)} style={{background:"var(--bg-sunken)",border:"1.5px solid var(--line)",borderRadius:18,padding:"13px 14px",color:"var(--primary)",fontSize:20,cursor:"pointer",WebkitTapHighlightColor:"transparent",touchAction:"manipulation",flexShrink:0}}>+</button>
-              <input ref={chatCameraRef} type="file" accept="image/*" capture="environment" multiple onChange={handleChatAttachment} style={{display:"none"}}/>
-              <input ref={chatPhotoRef} type="file" accept="image/*" multiple onChange={handleChatAttachment} style={{display:"none"}}/>
-              <input ref={chatFileRef} type="file" accept="*/*" multiple onChange={handleChatAttachment} style={{display:"none"}}/>
-              <input ref={chatAnyFileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt,.csv,.xls,.xlsx" multiple onChange={handleChatAttachment} style={{display:"none"}}/>
               <textarea rows={1} value={cin} onChange={e=>setCin(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat();}}} placeholder={chatAttachments.length>0?"Mensaje opcional…":"Pregunta lo que quieras…"} style={{...inp,flex:1,padding:"13px 16px",borderRadius:18}}/>
               <button onClick={sendChat} disabled={(!cin.trim()&&chatAttachments.length===0)||cL} style={{background:(!cin.trim()&&chatAttachments.length===0)||cL?"var(--bg-sunken)":"linear-gradient(135deg,var(--primary),var(--mint))",border:"none",borderRadius:18,padding:"13px 20px",color:(!cin.trim()&&chatAttachments.length===0)||cL?"var(--ink-mute)":"#fff",fontSize:18,cursor:(!cin.trim()&&chatAttachments.length===0)||cL?"not-allowed":"pointer",minWidth:54,boxShadow:(!cin.trim()&&chatAttachments.length===0)||cL?"none":"0 6px 16px -6px rgba(8,145,178,0.4)"}}>↑</button>
             </div>
+          </div>
+        </div>
+      )}
 
-            {showAttachMenu && (
-              <div className="fadeIn" onClick={()=>setShowAttachMenu(false)} style={{position:"fixed",inset:0,background:"rgba(10,31,28,0.4)",backdropFilter:"blur(8px)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-                <div className="fade" onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:"var(--bg-elev)",borderTopLeftRadius:32,borderTopRightRadius:32,padding:"20px 20px 32px",boxShadow:"0 -10px 40px -10px rgba(0,0,0,0.15)"}}>
-                  <div style={{width:42,height:5,background:"var(--line-strong)",borderRadius:4,margin:"0 auto 20px"}}/>
-                  <div className="serif" style={{fontSize:24,color:"var(--ink)",lineHeight:1,marginBottom:18,textAlign:"center"}}>Adjuntar</div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
-                    <button type="button" onClick={()=>{setShowAttachMenu(false);chatCameraRef.current&&chatCameraRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
-                      <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,var(--primary),var(--primary-deep))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(8,145,178,0.4)"}}>📷</div>
-                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Cámara</div>
-                      <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Tomar foto ahora</div>
-                    </button>
-                    <button type="button" onClick={()=>{setShowAttachMenu(false);chatPhotoRef.current&&chatPhotoRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
-                      <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,var(--mint),var(--mint-deep))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(16,185,129,0.4)"}}>🖼️</div>
-                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Galería</div>
-                      <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Foto guardada</div>
-                    </button>
-                    <button type="button" onClick={()=>{setShowAttachMenu(false);chatFileRef.current&&chatFileRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
-                      <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,#ef4444,#dc2626)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(239,68,68,0.4)"}}>📄</div>
-                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Archivo</div>
-                      <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Documento</div>
-                    </button>
-                    <button type="button" onClick={()=>{setShowAttachMenu(false);chatAnyFileRef.current&&chatAnyFileRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
-                      <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(167,139,250,0.4)"}}>📎</div>
-                      <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Archivos</div>
-                      <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Cualquier archivo</div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+      {/* GLOBAL FILE INPUTS (need to be outside tabs so they work from Today + Chat) */}
+      <input ref={chatCameraRef} type="file" accept="image/*" capture="environment" multiple onChange={handleChatAttachment} style={{display:"none"}}/>
+      <input ref={chatPhotoRef} type="file" accept="image/*" multiple onChange={handleChatAttachment} style={{display:"none"}}/>
+      <input ref={chatFileRef} type="file" accept="*/*" multiple onChange={handleChatAttachment} style={{display:"none"}}/>
+      <input ref={chatAnyFileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt,.csv,.xls,.xlsx" multiple onChange={handleChatAttachment} style={{display:"none"}}/>
+
+      {/* GLOBAL ATTACH MENU MODAL */}
+      {showAttachMenu && (
+        <div className="fadeIn" onClick={()=>setShowAttachMenu(false)} style={{position:"fixed",inset:0,background:"rgba(10,31,28,0.4)",backdropFilter:"blur(8px)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="fade" onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:"var(--bg-elev)",borderTopLeftRadius:32,borderTopRightRadius:32,padding:"20px 20px 32px",boxShadow:"0 -10px 40px -10px rgba(0,0,0,0.15)"}}>
+            <div style={{width:42,height:5,background:"var(--line-strong)",borderRadius:4,margin:"0 auto 20px"}}/>
+            <div className="serif" style={{fontSize:24,color:"var(--ink)",lineHeight:1,marginBottom:18,textAlign:"center"}}>Adjuntar</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
+              <button type="button" onClick={()=>{setShowAttachMenu(false);chatCameraRef.current&&chatCameraRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,var(--primary),var(--primary-deep))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(8,145,178,0.4)"}}>📷</div>
+                <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Cámara</div>
+                <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Tomar foto ahora</div>
+              </button>
+              <button type="button" onClick={()=>{setShowAttachMenu(false);chatPhotoRef.current&&chatPhotoRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,var(--mint),var(--mint-deep))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(16,185,129,0.4)"}}>🖼️</div>
+                <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Galería</div>
+                <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Foto guardada</div>
+              </button>
+              <button type="button" onClick={()=>{setShowAttachMenu(false);chatFileRef.current&&chatFileRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,#ef4444,#dc2626)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(239,68,68,0.4)"}}>📄</div>
+                <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Archivo</div>
+                <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Documento</div>
+              </button>
+              <button type="button" onClick={()=>{setShowAttachMenu(false);chatAnyFileRef.current&&chatAnyFileRef.current.click();}} style={{padding:"22px 12px",borderRadius:18,border:"1.5px solid var(--line)",background:"var(--bg-elev)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:10,WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:"#fff",boxShadow:"0 4px 12px -4px rgba(167,139,250,0.4)"}}>📎</div>
+                <div style={{fontSize:14,color:"var(--ink)",fontWeight:700}}>Archivos</div>
+                <div style={{fontSize:11,color:"var(--ink-mute)",textAlign:"center",lineHeight:1.4}}>Cualquier archivo</div>
+              </button>
+            </div>
           </div>
         </div>
       )}
