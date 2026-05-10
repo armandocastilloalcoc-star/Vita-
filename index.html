@@ -2765,6 +2765,11 @@ function App() {
   const [entryDetail,setEntryDetail] = React.useState(null);
   const [entryAnalysis,setEntryAnalysis] = React.useState(null);
   const [analyzingEntry,setAnalyzingEntry] = React.useState(false);
+  const [editingEntry,setEditingEntry] = React.useState(null);
+  const [editingItems,setEditingItems] = React.useState([]);
+  const [editingMeal,setEditingMeal] = React.useState("");
+  const [editingText,setEditingText] = React.useState("");
+  const [reanalyzing,setReanalyzing] = React.useState(false);
   // Unregister any existing service workers (cleanup from previous version)
   React.useEffect(()=>{
     if ("serviceWorker" in navigator) {
@@ -2834,6 +2839,30 @@ function App() {
   };
   const deleteFoodEntry = (id) => {
     setFoodLog(prev=>({...prev,[selectedDate]:(prev[selectedDate]||[]).filter(e=>e.id!==id)}));
+  };
+  const updateFoodEntry = (id, updates, dateKey) => {
+    const dKey = dateKey || selectedDate;
+    setFoodLog(prev => {
+      const dayEntries = prev[dKey] || [];
+      const updated = dayEntries.map(e => {
+        if (e.id !== id) return e;
+        const merged = {...e, ...updates};
+        // Recalculate totals from items if items provided
+        if (updates.items) {
+          merged.totals = updates.items.reduce((acc, it) => ({
+            kcal: acc.kcal + (Number(it.kcal)||0),
+            protein: acc.protein + (Number(it.protein)||0),
+            carbs: acc.carbs + (Number(it.carbs)||0),
+            fat: acc.fat + (Number(it.fat)||0),
+            sugar: acc.sugar + (Number(it.sugar)||0),
+            fiber: acc.fiber + (Number(it.fiber)||0),
+            sodium: acc.sodium + (Number(it.sodium)||0)
+          }), {kcal:0,protein:0,carbs:0,fat:0,sugar:0,fiber:0,sodium:0});
+        }
+        return merged;
+      });
+      return {...prev, [dKey]: updated};
+    });
   };
   const updateWeight = w => {
     setProfile(p=>({...p,weight:w}));
@@ -3274,6 +3303,78 @@ AGUA HOY: ${waterToday}ml de ${waterGoalCtx*1000}ml objetivo`;
     setWaterLog(prev => ({...prev, [k]: Math.max(0, (prev[k]||0) + ml)}));
   };
 
+  const openEditEntry = (entry) => {
+    setEditingEntry(entry);
+    setEditingItems(entry.items ? entry.items.map(it => ({...it})) : []);
+    setEditingMeal(entry.meal || "");
+    setEditingText(entry.originalText || "");
+    setEntryDetail(null);
+  };
+
+  const saveEditedEntry = () => {
+    if (!editingEntry) return;
+    const cleanedItems = editingItems.map(it => ({
+      ...it,
+      kcal: Number(it.kcal)||0,
+      protein: Number(it.protein)||0,
+      carbs: Number(it.carbs)||0,
+      fat: Number(it.fat)||0,
+      sugar: Number(it.sugar)||0,
+      fiber: Number(it.fiber)||0,
+      sodium: Number(it.sodium)||0
+    }));
+    updateFoodEntry(editingEntry.id, {
+      items: cleanedItems,
+      meal: editingMeal,
+      originalText: editingText,
+      edited: true,
+      editedAt: Date.now()
+    }, editingEntry.dateKey);
+    setEditingEntry(null);
+  };
+
+  const removeEditingItem = (idx) => {
+    setEditingItems(prev => prev.filter((_,i) => i!==idx));
+  };
+
+  const addEmptyEditingItem = () => {
+    setEditingItems(prev => [...prev, {name:"", qty:"", portion:"", kcal:0, protein:0, carbs:0, fat:0, sugar:0, fiber:0, sodium:0}]);
+  };
+
+  const updateEditingItem = (idx, field, value) => {
+    setEditingItems(prev => prev.map((it,i) => i===idx ? {...it, [field]: value} : it));
+  };
+
+  const reanalyzeEditedEntry = async () => {
+    if (!key) { setShowKey(true); return; }
+    if (!editingText.trim()) { alert("Necesitas describir la comida para reanalizarla"); return; }
+    setReanalyzing(true);
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({
+          model:"claude-haiku-4-5-20251001",
+          max_tokens:1500,
+          system:"Eres un experto en nutrición. Analiza la descripción y devuelve SOLO JSON válido sin explicación. Formato: {\"items\":[{\"name\":\"\",\"qty\":\"\",\"portion\":\"\",\"kcal\":0,\"protein\":0,\"carbs\":0,\"fat\":0,\"sugar\":0,\"fiber\":0,\"sodium\":0}]}. Sé preciso con cantidades. Si no se especifica, usa porciones estándar.",
+          messages:[{role:"user",content:`Analiza esta comida y devuelve los items con sus macros:\n\n${editingText}`}]
+        })
+      });
+      const d = await r.json();
+      if (d.error) throw new Error(d.error.message);
+      const txt = d.content[0].text.trim();
+      const jsonMatch = txt.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("No se pudo extraer JSON");
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.items && Array.isArray(parsed.items)) {
+        setEditingItems(parsed.items);
+      }
+    } catch(e) {
+      alert("Error reanalizando: "+e.message);
+    }
+    setReanalyzing(false);
+  };
+
   const analyzeEntry = async (entry) => {
     if (!key) { setShowKey(true); return; }
     setAnalyzingEntry(true);
@@ -3517,7 +3618,8 @@ Genera el reporte semanal según las instrucciones.`;
       {entryDetail && (
         <div onClick={()=>setEntryDetail(null)} style={{position:"fixed",inset:0,background:"rgba(10,31,28,0.6)",backdropFilter:"blur(8px)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div onClick={(e)=>e.stopPropagation()} style={{background:"var(--bg-elev)",borderTopLeftRadius:28,borderTopRightRadius:28,width:"100%",maxWidth:640,maxHeight:"92vh",overflow:"auto",padding:"24px 22px 30px",position:"relative"}}>
-            <div style={{position:"absolute",top:14,right:14}}>
+            <div style={{position:"absolute",top:14,right:14,display:"flex",gap:8}}>
+              <button onClick={()=>openEditEntry(entryDetail)} style={{background:"var(--primary-soft)",border:"none",borderRadius:"50%",width:34,height:34,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"var(--primary-deep)",cursor:"pointer",WebkitTapHighlightColor:"transparent"}} title="Editar">✏️</button>
               <button onClick={()=>setEntryDetail(null)} style={{background:"var(--bg-sunken)",border:"none",borderRadius:"50%",width:34,height:34,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:"var(--ink-mute)",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>×</button>
             </div>
 
@@ -3618,6 +3720,102 @@ Genera el reporte semanal según las instrucciones.`;
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* EDIT ENTRY MODAL */}
+      {editingEntry && (
+        <div onClick={()=>setEditingEntry(null)} style={{position:"fixed",inset:0,background:"rgba(10,31,28,0.6)",backdropFilter:"blur(8px)",zIndex:250,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"var(--bg-elev)",borderTopLeftRadius:28,borderTopRightRadius:28,width:"100%",maxWidth:640,maxHeight:"94vh",overflow:"auto",padding:"24px 22px 30px",position:"relative"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div>
+                <div style={{fontSize:10,color:"var(--primary-deep)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase"}}>Editar comida</div>
+                <div className="serif" style={{fontSize:22,color:"var(--ink)",lineHeight:1.2,marginTop:2}}>Corregir registro</div>
+              </div>
+              <button onClick={()=>setEditingEntry(null)} style={{background:"var(--bg-sunken)",border:"none",borderRadius:"50%",width:34,height:34,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:"var(--ink-mute)",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>×</button>
+            </div>
+
+            {/* Meal type selector */}
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:8}}>Tipo de comida</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                {["desayuno","comida","cena","snack"].map(m => (
+                  <button key={m} onClick={()=>setEditingMeal(m)} style={{padding:"10px 6px",borderRadius:10,border:editingMeal===m?"1.5px solid var(--primary)":"1.5px solid var(--line)",background:editingMeal===m?"var(--primary-soft)":"var(--bg-elev)",color:editingMeal===m?"var(--primary-deep)":"var(--ink-soft)",fontSize:12,fontWeight:700,cursor:"pointer",WebkitTapHighlightColor:"transparent",textTransform:"capitalize"}}>{m}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Original text + reanalyze */}
+            <div style={{marginBottom:18}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase"}}>Descripción</div>
+                <button onClick={reanalyzeEditedEntry} disabled={reanalyzing||!editingText.trim()} style={{background:reanalyzing||!editingText.trim()?"var(--bg-sunken)":"linear-gradient(135deg,var(--primary),var(--mint))",border:"none",borderRadius:8,padding:"6px 12px",color:reanalyzing||!editingText.trim()?"var(--ink-mute)":"#fff",fontSize:11,fontWeight:700,cursor:reanalyzing||!editingText.trim()?"not-allowed":"pointer",WebkitTapHighlightColor:"transparent"}}>{reanalyzing?"Analizando...":"🔄 Reanalizar con IA"}</button>
+              </div>
+              <textarea value={editingText} onChange={e=>setEditingText(e.target.value)} placeholder="Describe lo que comiste..." rows={3} style={{width:"100%",padding:"12px 14px",border:"1.5px solid var(--line)",borderRadius:12,fontSize:14,background:"var(--bg-sunken)",color:"var(--ink)",resize:"vertical",fontFamily:"inherit",lineHeight:1.5,outline:"none",boxSizing:"border-box"}}/>
+              <div style={{fontSize:10,color:"var(--ink-mute)",marginTop:6,fontStyle:"italic"}}>💡 Modifica la descripción y toca "Reanalizar" para que la IA recalcule los items y macros</div>
+            </div>
+
+            {/* Items list */}
+            <div style={{marginBottom:18}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <div style={{fontSize:10,color:"var(--ink-mute)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase"}}>Items ({editingItems.length})</div>
+                <button onClick={addEmptyEditingItem} style={{background:"var(--primary-soft)",border:"none",borderRadius:8,padding:"5px 10px",color:"var(--primary-deep)",fontSize:11,fontWeight:700,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>+ Agregar item</button>
+              </div>
+
+              {editingItems.length === 0 ? (
+                <div style={{padding:"20px",textAlign:"center",background:"var(--bg-sunken)",borderRadius:12,fontSize:13,color:"var(--ink-mute)"}}>Sin items. Reanaliza con IA o agrega manualmente.</div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {editingItems.map((it,idx) => (
+                    <div key={idx} style={{padding:"12px",background:"var(--bg-sunken)",borderRadius:12,border:"1px solid var(--line)"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                        <input value={it.name||""} onChange={e=>updateEditingItem(idx,"name",e.target.value)} placeholder="Nombre del alimento" style={{flex:1,padding:"8px 10px",border:"1px solid var(--line)",borderRadius:8,fontSize:13,background:"var(--bg-elev)",color:"var(--ink)",fontWeight:600,outline:"none",fontFamily:"inherit"}}/>
+                        <button onClick={()=>removeEditingItem(idx)} style={{background:"transparent",border:"none",color:"var(--danger)",cursor:"pointer",fontSize:18,padding:"4px 8px",fontWeight:600,WebkitTapHighlightColor:"transparent"}}>×</button>
+                      </div>
+                      <input value={it.qty||it.portion||""} onChange={e=>updateEditingItem(idx,"qty",e.target.value)} placeholder="Cantidad (ej: 1 taza, 100g)" style={{width:"100%",padding:"7px 10px",border:"1px solid var(--line)",borderRadius:8,fontSize:12,background:"var(--bg-elev)",color:"var(--ink-soft)",outline:"none",marginBottom:8,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                        <div>
+                          <div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,marginBottom:3,textAlign:"center"}}>Kcal</div>
+                          <input type="number" inputMode="decimal" value={it.kcal||0} onChange={e=>updateEditingItem(idx,"kcal",e.target.value)} style={{width:"100%",padding:"6px 4px",border:"1px solid var(--line)",borderRadius:7,fontSize:12,background:"var(--bg-elev)",color:"var(--primary)",fontWeight:700,textAlign:"center",outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,marginBottom:3,textAlign:"center"}}>Prot</div>
+                          <input type="number" inputMode="decimal" value={it.protein||0} onChange={e=>updateEditingItem(idx,"protein",e.target.value)} style={{width:"100%",padding:"6px 4px",border:"1px solid var(--line)",borderRadius:7,fontSize:12,background:"var(--bg-elev)",color:"var(--mint-deep)",fontWeight:700,textAlign:"center",outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,marginBottom:3,textAlign:"center"}}>Carb</div>
+                          <input type="number" inputMode="decimal" value={it.carbs||0} onChange={e=>updateEditingItem(idx,"carbs",e.target.value)} style={{width:"100%",padding:"6px 4px",border:"1px solid var(--line)",borderRadius:7,fontSize:12,background:"var(--bg-elev)",color:"var(--ink)",fontWeight:700,textAlign:"center",outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:9,color:"var(--ink-mute)",fontWeight:700,marginBottom:3,textAlign:"center"}}>Gras</div>
+                          <input type="number" inputMode="decimal" value={it.fat||0} onChange={e=>updateEditingItem(idx,"fat",e.target.value)} style={{width:"100%",padding:"6px 4px",border:"1px solid var(--line)",borderRadius:7,fontSize:12,background:"var(--bg-elev)",color:"var(--ink)",fontWeight:700,textAlign:"center",outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Live total preview */}
+            {editingItems.length > 0 && (
+              <div style={{padding:"12px 14px",background:"linear-gradient(135deg,rgba(8,145,178,0.08),rgba(16,185,129,0.06))",border:"1px solid var(--primary-soft)",borderRadius:12,marginBottom:18}}>
+                <div style={{fontSize:10,color:"var(--primary-deep)",letterSpacing:1.2,fontWeight:800,textTransform:"uppercase",marginBottom:6}}>Totales nuevos</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,fontSize:12,fontWeight:700,color:"var(--ink)"}}>
+                  <div style={{textAlign:"center"}}>{Math.round(editingItems.reduce((s,it)=>s+(Number(it.kcal)||0),0))} <span style={{fontSize:9,color:"var(--ink-mute)"}}>kcal</span></div>
+                  <div style={{textAlign:"center"}}>{Math.round(editingItems.reduce((s,it)=>s+(Number(it.protein)||0),0))}<span style={{fontSize:9,color:"var(--ink-mute)"}}>g P</span></div>
+                  <div style={{textAlign:"center"}}>{Math.round(editingItems.reduce((s,it)=>s+(Number(it.carbs)||0),0))}<span style={{fontSize:9,color:"var(--ink-mute)"}}>g C</span></div>
+                  <div style={{textAlign:"center"}}>{Math.round(editingItems.reduce((s,it)=>s+(Number(it.fat)||0),0))}<span style={{fontSize:9,color:"var(--ink-mute)"}}>g G</span></div>
+                </div>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setEditingEntry(null)} style={{flex:1,padding:14,background:"var(--bg-sunken)",border:"none",borderRadius:14,color:"var(--ink-soft)",fontSize:14,fontWeight:700,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>Cancelar</button>
+              <button onClick={saveEditedEntry} disabled={!editingMeal||editingItems.length===0} style={{flex:2,padding:14,background:!editingMeal||editingItems.length===0?"var(--bg-sunken)":"linear-gradient(135deg,var(--primary),var(--mint))",border:"none",borderRadius:14,color:!editingMeal||editingItems.length===0?"var(--ink-mute)":"#fff",fontSize:14,fontWeight:700,cursor:!editingMeal||editingItems.length===0?"not-allowed":"pointer",letterSpacing:0.3,boxShadow:!editingMeal||editingItems.length===0?"none":"0 6px 20px -6px rgba(8,145,178,0.4)",WebkitTapHighlightColor:"transparent"}}>Guardar cambios</button>
+            </div>
           </div>
         </div>
       )}
