@@ -1,0 +1,4 @@
+# Vita Cloud — sirve el index.html existente en la raíz y expone el backend.
+[build]
+  publish = "."
+  functions = "functions"
