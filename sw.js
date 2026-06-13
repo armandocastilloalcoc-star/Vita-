@@ -5,11 +5,10 @@
    - Versiona el caché; limpia los viejos al activar. */
 const VERSION = "vita-v1";
 const PRECACHE = [
-  "/", "/index.html", "/vita-cloud.js",
+  "/", "/index.html", "/vita-cloud.js", "/app.js",
   "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png",
   "https://unpkg.com/react@18/umd/react.production.min.js",
-  "https://unpkg.com/react-dom@18/umd/react-dom.production.min.js",
-  "https://unpkg.com/@babel/standalone/babel.min.js"
+  "https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"
 ];
 
 self.addEventListener("install", (e) => {
