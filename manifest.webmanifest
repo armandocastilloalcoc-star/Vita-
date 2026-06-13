@@ -1,0 +1,17 @@
+{
+  "name": "Vita — Control de peso",
+  "short_name": "Vita",
+  "description": "Tu app de control de peso y bienestar.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafdfc",
+  "theme_color": "#14201c",
+  "lang": "es-MX",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
