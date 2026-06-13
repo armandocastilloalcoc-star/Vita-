@@ -111,7 +111,64 @@ input.water-bg,textarea.water-bg,button.water-bg{
   background-size:auto, auto, 150px 150px;
   background-blend-mode:normal, normal, soft-light;
 }
+
+/* ===== Modo oscuro (Fase 3) — override de variables ===== */
+html[data-theme="dark"]{
+  --bg:#0a1310;
+  --bg-elev:#11201c;
+  --bg-sunken:#0c1814;
+  --ink:#e9f3f0;
+  --ink-soft:#a9c2bd;
+  --ink-mute:#76928e;
+  --line:#1f312c;
+  --line-strong:#2e463f;
+  --primary:#22b8d4;
+  --primary-deep:#3cc7e0;
+  --primary-soft:#0c2a31;
+  --mint:#34d399;
+  --mint-deep:#56e0ab;
+  --mint-soft:#0e2a22;
+  --aqua:#22d3ee;
+  --warn:#fbbf24;
+  --danger:#f87171;
+  color-scheme:dark;
+}
+html[data-theme="dark"], html[data-theme="dark"] body{
+  background:linear-gradient(135deg,#07120f 0%,#0a1613 45%,#08140f 80%,#0a1810 100%)!important;
+  background-attachment:fixed!important;
+}
+/* Botón flotante de cambio de tema */
+#vita-theme-toggle{
+  position:fixed;left:14px;bottom:14px;z-index:99997;
+  width:44px;height:44px;border-radius:999px;border:1px solid var(--line);
+  background:var(--bg-elev);color:var(--ink);font-size:19px;line-height:1;cursor:pointer;
+  box-shadow:0 6px 20px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;
+  transition:transform .15s ease;
+}
+#vita-theme-toggle:hover{transform:translateY(-2px);}
+#vita-theme-toggle:active{transform:scale(.94);}
+
 </style>
+<script>
+(function(){
+  var KEY="vita_theme";
+  function meta(t){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="dark"?"#0a1310":"#fafdfc");}
+  function apply(t){document.documentElement.setAttribute("data-theme",t);meta(t);}
+  var saved=null;try{saved=localStorage.getItem(KEY);}catch(e){}
+  var sysDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;
+  apply(saved||(sysDark?"dark":"light"));
+  window.addEventListener("load",function(){
+    if(document.getElementById("vita-theme-toggle"))return;
+    var b=document.createElement("button");
+    b.id="vita-theme-toggle";b.setAttribute("aria-label","Cambiar tema claro/oscuro");b.setAttribute("title","Cambiar tema");
+    function ic(){b.textContent=document.documentElement.getAttribute("data-theme")==="dark"?"\u2600":"\u263E";}
+    ic();
+    b.onclick=function(){var cur=document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(KEY,cur);}catch(e){}apply(cur);ic();};
+    document.body.appendChild(b);
+  });
+})();
+</script>
+
 </head>
 <body>
 <div id="root"></div>
