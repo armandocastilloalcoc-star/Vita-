@@ -1847,7 +1847,7 @@ function WeightChart({
       fontWeight: 700,
       textAlign: "center"
     }
-  }, "\\U0001F3AF ", projection));
+  }, "\uD83C\uDFAF ", projection));
 }
 function WeightStat({
   current,
