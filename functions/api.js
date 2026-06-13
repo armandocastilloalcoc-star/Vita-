@@ -11,10 +11,18 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 export const config = {
-  path: ["/api/auth/register", "/api/auth/login", "/api/data", "/api/data/*", "/api/mcp-token", "/mcp"],
+  path: ["/api/auth/register", "/api/auth/login", "/api/auth/forgot", "/api/auth/reset", "/api/data", "/api/data/*", "/api/mcp-token", "/mcp"],
 };
 
 const JWT_SECRET = process.env.JWT_SECRET || "cambia-este-secreto";
+// Configuración de correo (Resend). Pon estas variables en Netlify:
+//   RESEND_API_KEY  -> tu API key de https://resend.com
+//   RESEND_FROM     -> remitente verificado, ej. "Vita <no-reply@tudominio.com>"
+//                      (por defecto usa el remitente de prueba de Resend)
+//   APP_URL         -> (opcional) URL pública de la app para los links del correo
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const RESEND_FROM = process.env.RESEND_FROM || "Vita <onboarding@resend.dev>";
+const RESET_TTL_MIN = 60; // minutos de validez del link
 const VALID_KEYS = new Set(["profile","log","plans","daily_menu","water_log","weight_history","weekly_report","coach_memory"]);
 
 const sql = (() => { try { return neon(); } catch { return null; } })();
@@ -27,6 +35,7 @@ async function ensureSchema() {
     await sql`create table if not exists users (id uuid primary key default gen_random_uuid(), email text unique not null, password_hash text not null, created_at timestamptz not null default now())`;
     await sql`create table if not exists user_data (user_id uuid not null references users(id) on delete cascade, key text not null, value jsonb not null default '{}'::jsonb, updated_at timestamptz not null default now(), primary key (user_id, key))`;
     await sql`create table if not exists mcp_tokens (token text primary key, user_id uuid not null references users(id) on delete cascade, name text, created_at timestamptz not null default now(), last_used_at timestamptz)`;
+    await sql`create table if not exists password_resets (token text primary key, user_id uuid not null references users(id) on delete cascade, expires_at timestamptz not null, used_at timestamptz, created_at timestamptz not null default now())`;
   })().catch((e) => { _schema = null; throw e; });
   return _schema;
 }
@@ -41,6 +50,30 @@ function userFromJwt(req) {
 }
 function signToken(u){ return jwt.sign({ sub:u.id, email:u.email }, JWT_SECRET, { expiresIn:"30d" }); }
 function randomToken(){ const b=crypto.getRandomValues(new Uint8Array(24)); return "vita_"+btoa(String.fromCharCode(...b)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
+function resetToken(){ const b=crypto.getRandomValues(new Uint8Array(32)); return btoa(String.fromCharCode(...b)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
+
+async function sendResetEmail(email, link){
+  if (!RESEND_API_KEY) { console.log("[vita] RESEND_API_KEY ausente; link de reset:", link); return false; }
+  const html =
+    '<div style="font-family:system-ui,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;color:#14201c">'+
+    '<h2 style="margin:0 0 8px">Restablecer tu contraseña de Vita</h2>'+
+    '<p style="color:#5a6b64;font-size:14px">Recibimos una solicitud para restablecer tu contraseña. '+
+    'Haz clic en el botón para crear una nueva. El enlace vence en '+RESET_TTL_MIN+' minutos.</p>'+
+    '<p style="margin:22px 0"><a href="'+link+'" style="background:#14201c;color:#fafdfc;text-decoration:none;'+
+    'padding:13px 22px;border-radius:12px;font-weight:600;display:inline-block">Crear nueva contraseña</a></p>'+
+    '<p style="color:#5a6b64;font-size:12px">Si el botón no funciona, copia este enlace:<br>'+
+    '<span style="word-break:break-all">'+link+'</span></p>'+
+    '<p style="color:#5a6b64;font-size:12px">Si no fuiste tú, ignora este correo; tu contraseña no cambiará.</p></div>';
+  try{
+    const r = await fetch("https://api.resend.com/emails", {
+      method:"POST",
+      headers:{ "Authorization":"Bearer "+RESEND_API_KEY, "Content-Type":"application/json" },
+      body: JSON.stringify({ from: RESEND_FROM, to:[email], subject:"Restablecer tu contraseña de Vita", html }),
+    });
+    if(!r.ok){ console.log("[vita] error Resend:", r.status, await r.text().catch(()=>"")); return false; }
+    return true;
+  }catch(e){ console.log("[vita] excepción Resend:", e?.message||e); return false; }
+}
 
 async function getData(uid,key){ await ensureSchema(); const r=await sql`select value from user_data where user_id=${uid} and key=${key}`; return r[0]?.value ?? null; }
 async function setData(uid,key,val){ await ensureSchema(); await sql`insert into user_data (user_id,key,value,updated_at) values (${uid},${key},${JSON.stringify(val)}::jsonb, now()) on conflict (user_id,key) do update set value=excluded.value, updated_at=now()`; }
@@ -128,6 +161,46 @@ export default async (req) => {
       if(!u||!(await bcrypt.compare(pass,u.password_hash))) return json({error:"credenciales_invalidas"},401);
       return json({token:signToken(u),user:{id:u.id,email:u.email}});
     }
+  }
+
+  if (path==="/api/auth/forgot"){
+    if (req.method!=="POST") return json({error:"method_not_allowed"},405);
+    await ensureSchema();
+    let b; try{ b=await req.json(); }catch{ return json({error:"invalid_json"},400); }
+    const email=String(b.email||"").trim().toLowerCase();
+    // Respuesta genérica siempre: no revelamos si el correo existe.
+    const generic={ ok:true, message:"Si el correo existe, te enviamos un enlace para restablecer tu contraseña." };
+    if(!email) return json(generic);
+    const u=(await sql`select id,email from users where email=${email}`)[0];
+    if(u){
+      const tok=resetToken();
+      const exp=new Date(Date.now()+RESET_TTL_MIN*60000).toISOString();
+      await sql`insert into password_resets (token,user_id,expires_at) values (${tok},${u.id},${exp})`;
+      const base=(process.env.APP_URL||new URL(req.url).origin).replace(/\/$/,"");
+      const link=base+"/?reset="+tok;
+      await sendResetEmail(u.email, link);
+    }
+    return json(generic);
+  }
+
+  if (path==="/api/auth/reset"){
+    if (req.method!=="POST") return json({error:"method_not_allowed"},405);
+    await ensureSchema();
+    let b; try{ b=await req.json(); }catch{ return json({error:"invalid_json"},400); }
+    const tok=String(b.token||""); const pass=String(b.password||"");
+    if(!tok) return json({error:"token_requerido"},400);
+    if(pass.length<6) return json({error:"password_min"},400);
+    const r=(await sql`select token,user_id,expires_at,used_at from password_resets where token=${tok}`)[0];
+    if(!r) return json({error:"token_invalido"},400);
+    if(r.used_at) return json({error:"token_usado"},400);
+    if(new Date(r.expires_at).getTime() < Date.now()) return json({error:"token_expirado"},400);
+    const hash=await bcrypt.hash(pass,10);
+    await sql`update users set password_hash=${hash} where id=${r.user_id}`;
+    await sql`update password_resets set used_at=now() where token=${tok}`;
+    // invalida cualquier otro token de reset pendiente del usuario
+    await sql`update password_resets set used_at=now() where user_id=${r.user_id} and used_at is null`;
+    const u=(await sql`select id,email from users where id=${r.user_id}`)[0];
+    return json({ ok:true, token:signToken(u), user:{id:u.id,email:u.email} });
   }
 
   if (path==="/api/mcp-token"){
