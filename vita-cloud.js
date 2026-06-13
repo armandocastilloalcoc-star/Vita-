@@ -98,6 +98,11 @@
     return ({ email_ya_registrado: "Ese correo ya está registrado.",
       credenciales_invalidas: "Correo o contraseña incorrectos.",
       "email y password (min 6) requeridos": "Correo y contraseña (mínimo 6).",
+      token_invalido: "El enlace no es válido.",
+      token_usado: "Este enlace ya se usó. Solicita uno nuevo.",
+      token_expirado: "El enlace venció. Solicita uno nuevo.",
+      token_requerido: "Falta el enlace de recuperación.",
+      password_min: "La contraseña debe tener mínimo 6 caracteres.",
       db_not_configured: "Servidor sin base de datos." })[c] || c;
   }
 
@@ -108,6 +113,7 @@
       '<input id="e" type="email" placeholder="correo" autocomplete="email">' +
       '<input id="p" type="password" placeholder="contraseña" autocomplete="current-password">' +
       '<div class="vc-err" id="x"></div><button class="main" id="g">Entrar</button>' +
+      '<div class="alt" id="fpwrap"><a id="fp">¿Olvidaste tu contraseña?</a></div>' +
       '<div class="alt" id="a">¿No tienes cuenta? <a id="sw">Crear cuenta</a></div>' +
       '<div class="alt"><a id="cl">Seguir sin conectar</a></div></div></div>');
     document.body.appendChild(ov);
@@ -122,16 +128,73 @@
         q("#a").innerHTML = mode === "login"
           ? '¿No tienes cuenta? <a id="sw">Crear cuenta</a>'
           : '¿Ya tienes cuenta? <a id="sw">Entrar</a>';
+        q("#fpwrap").style.display = mode === "login" ? "" : "none";
         bindSwap();
       };
     }
     bindSwap();
+    q("#fp").onclick = function () { ov.remove(); showForgot(); };
     q("#cl").onclick = function () { ov.remove(); };
     q("#g").onclick = function () {
       q("#x").textContent = ""; q("#g").disabled = true;
       api("/api/auth/" + mode, { method: "POST", body: { email: q("#e").value.trim(), password: q("#p").value } })
         .then(function (res) { localStorage.setItem(SESSION, res.token); return firstSync(); })
         .then(function () { location.reload(); })
+        .catch(function (err) { q("#x").textContent = tr(err.message); q("#g").disabled = false; });
+    };
+  }
+
+  // Paso 1: pedir el correo para enviar el enlace de recuperación.
+  function showForgot() {
+    var ov = el('<div class="vc-ov"><div class="vc-card">' +
+      '<h2>Recuperar contraseña</h2>' +
+      '<p class="sub" id="s">Escribe tu correo y te enviaremos un enlace para crear una nueva contraseña.</p>' +
+      '<input id="e" type="email" placeholder="correo" autocomplete="email">' +
+      '<div class="vc-err" id="x"></div><button class="main" id="g">Enviar enlace</button>' +
+      '<div class="alt"><a id="bk">‹ Volver a iniciar sesión</a></div></div></div>');
+    document.body.appendChild(ov);
+    var q = function (s) { return ov.querySelector(s); };
+    q("#bk").onclick = function () { ov.remove(); showAuth(); };
+    q("#g").onclick = function () {
+      q("#x").textContent = ""; q("#g").disabled = true;
+      api("/api/auth/forgot", { method: "POST", body: { email: q("#e").value.trim() } })
+        .then(function () {
+          q("#s").textContent = "Listo. Si el correo está registrado, te llegará un enlace en unos minutos. Revisa también spam.";
+          q("#e").style.display = "none"; q("#g").style.display = "none";
+        })
+        .catch(function (err) { q("#x").textContent = tr(err.message); q("#g").disabled = false; });
+    };
+  }
+
+  // Paso 2: el usuario llega desde el enlace del correo (?reset=TOKEN) y fija su nueva contraseña.
+  function showReset(tokenStr) {
+    var ov = el('<div class="vc-ov"><div class="vc-card">' +
+      '<h2>Nueva contraseña</h2>' +
+      '<p class="sub" id="s">Crea una contraseña nueva para tu cuenta.</p>' +
+      '<input id="p1" type="password" placeholder="nueva contraseña (mín. 6)" autocomplete="new-password">' +
+      '<input id="p2" type="password" placeholder="repite la contraseña" autocomplete="new-password">' +
+      '<div class="vc-err" id="x"></div><button class="main" id="g">Guardar contraseña</button>' +
+      '<div class="alt"><a id="bk">Cancelar</a></div></div></div>');
+    document.body.appendChild(ov);
+    var q = function (s) { return ov.querySelector(s); };
+    function cleanUrl() {
+      try { var u = new URL(location.href); u.searchParams.delete("reset"); history.replaceState(null, "", u.pathname + u.search + u.hash); } catch (e) {}
+    }
+    q("#bk").onclick = function () { ov.remove(); cleanUrl(); };
+    q("#g").onclick = function () {
+      var p1 = q("#p1").value, p2 = q("#p2").value;
+      q("#x").textContent = "";
+      if (p1.length < 6) { q("#x").textContent = "La contraseña debe tener mínimo 6 caracteres."; return; }
+      if (p1 !== p2) { q("#x").textContent = "Las contraseñas no coinciden."; return; }
+      q("#g").disabled = true;
+      api("/api/auth/reset", { method: "POST", body: { token: tokenStr, password: p1 } })
+        .then(function (res) {
+          if (res && res.token) localStorage.setItem(SESSION, res.token);
+          cleanUrl();
+          q("#s").textContent = "¡Contraseña actualizada! Entrando…";
+          q("#p1").style.display = "none"; q("#p2").style.display = "none"; q("#g").style.display = "none";
+          setTimeout(function () { location.reload(); }, 900);
+        })
         .catch(function (err) { q("#x").textContent = tr(err.message); q("#g").disabled = false; });
     };
   }
@@ -166,6 +229,10 @@
 
   function boot() {
     css(); fab();
+    // ¿Llega desde el enlace de recuperación? Muestra el formulario de nueva contraseña.
+    var rtok = null;
+    try { rtok = new URLSearchParams(location.search).get("reset"); } catch (e) {}
+    if (rtok) { showReset(rtok); }
     // si ya hay sesión pero no se ha hecho la primera sync en este navegador
     if (loggedIn() && !localStorage.getItem(SYNCED)) {
       firstSync().catch(function (e) {
