@@ -1654,15 +1654,38 @@ function WeightChart({
   const minW = Math.min(...weights, safeGoal) - 1;
   const maxW = Math.max(...weights, safeStart, safeCurrent) + 1;
   const range = maxW - minW || 1;
-  const w = 320,
-    h = 130,
-    pad = 24;
-  const chartW = w - pad * 2;
-  const chartH = h - pad * 2;
+  const w = 340,
+    h = 150,
+    padX = 14,
+    padTop = 22,
+    padBot = 26;
+  const chartW = w - padX * 2;
+  const chartH = h - padTop - padBot;
   const xStep = points.length > 1 ? chartW / (points.length - 1) : 0;
-  const yScale = val => pad + chartH - (val - minW) / range * chartH;
-  const linePath = points.map((p, i) => (i === 0 ? "M" : "L") + (pad + i * xStep) + "," + yScale(p.weight)).join(" ");
-  const areaPath = linePath + " L" + (pad + (points.length - 1) * xStep) + "," + (pad + chartH) + " L" + pad + "," + (pad + chartH) + " Z";
+  const yScale = val => padTop + chartH - (val - minW) / range * chartH;
+  const coords = points.map((p, i) => ({
+    x: padX + i * xStep,
+    y: yScale(p.weight)
+  }));
+  function smooth(pts) {
+    if (pts.length < 2) return "";
+    let d = "M" + pts[0].x.toFixed(1) + "," + pts[0].y.toFixed(1);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i],
+        p1 = pts[i],
+        p2 = pts[i + 1],
+        p3 = pts[i + 2] || p2;
+      const c1x = p1.x + (p2.x - p0.x) / 6,
+        c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6,
+        c2y = p2.y - (p3.y - p1.y) / 6;
+      d += " C" + c1x.toFixed(1) + "," + c1y.toFixed(1) + " " + c2x.toFixed(1) + "," + c2y.toFixed(1) + " " + p2.x.toFixed(1) + "," + p2.y.toFixed(1);
+    }
+    return d;
+  }
+  const linePath = smooth(coords);
+  const baseY = padTop + chartH;
+  const areaPath = linePath + " L" + coords[coords.length - 1].x.toFixed(1) + "," + baseY + " L" + coords[0].x.toFixed(1) + "," + baseY + " Z";
   const goalY = yScale(safeGoal);
   const first = points[0].weight;
   const last = points[points.length - 1].weight;
@@ -1683,6 +1706,7 @@ function WeightChart({
       }
     }
   }
+  const lastC = coords[coords.length - 1];
   return /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 14,
@@ -1725,27 +1749,44 @@ function WeightChart({
     y2: "100%"
   }, /*#__PURE__*/React.createElement("stop", {
     offset: "0%",
-    stopColor: "#06b6d4",
-    stopOpacity: "0.25"
+    style: {
+      stopColor: "var(--primary)",
+      stopOpacity: 0.22
+    }
   }), /*#__PURE__*/React.createElement("stop", {
     offset: "100%",
-    stopColor: "#06b6d4",
-    stopOpacity: "0"
-  }))), /*#__PURE__*/React.createElement("line", {
-    x1: pad,
+    style: {
+      stopColor: "var(--primary)",
+      stopOpacity: 0
+    }
+  }))), /*#__PURE__*/React.createElement("rect", {
+    x: padX,
+    y: goalY,
+    width: chartW,
+    height: Math.max(0, baseY - goalY),
+    style: {
+      fill: "var(--mint)"
+    },
+    opacity: "0.07"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: padX,
     y1: goalY,
-    x2: w - pad,
+    x2: w - padX,
     y2: goalY,
-    stroke: "#10b981",
+    style: {
+      stroke: "var(--mint-deep)"
+    },
     strokeWidth: "1.5",
     strokeDasharray: "4,4",
-    opacity: "0.6"
+    opacity: "0.7"
   }), /*#__PURE__*/React.createElement("text", {
-    x: w - pad,
+    x: w - padX,
     y: goalY - 5,
     textAnchor: "end",
     fontSize: "10",
-    fill: "#0d9488",
+    style: {
+      fill: "var(--mint-deep)"
+    },
     fontWeight: "700"
   }, "Meta ", safeGoal, "kg"), /*#__PURE__*/React.createElement("path", {
     d: areaPath,
@@ -1753,30 +1794,48 @@ function WeightChart({
   }), /*#__PURE__*/React.createElement("path", {
     d: linePath,
     fill: "none",
-    stroke: "#0891b2",
+    style: {
+      stroke: "var(--primary)"
+    },
     strokeWidth: "2.5",
     strokeLinejoin: "round",
     strokeLinecap: "round"
-  }), points.map((p, i) => /*#__PURE__*/React.createElement("circle", {
+  }), coords.map((c, i) => /*#__PURE__*/React.createElement("circle", {
     key: i,
-    cx: pad + i * xStep,
-    cy: yScale(p.weight),
+    cx: c.x,
+    cy: c.y,
     r: "3",
-    fill: "#fff",
-    stroke: "#0891b2",
+    style: {
+      fill: "var(--bg-elev)",
+      stroke: "var(--primary)"
+    },
     strokeWidth: "2"
   })), /*#__PURE__*/React.createElement("circle", {
-    cx: pad + (points.length - 1) * xStep,
-    cy: yScale(last),
-    r: "5",
-    fill: "#0891b2"
+    cx: lastC.x,
+    cy: lastC.y,
+    r: "7",
+    style: {
+      fill: "var(--primary)"
+    },
+    opacity: "0.18"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: lastC.x,
+    cy: lastC.y,
+    r: "4.5",
+    style: {
+      fill: "var(--primary)",
+      stroke: "var(--bg-elev)"
+    },
+    strokeWidth: "2"
   }), /*#__PURE__*/React.createElement("text", {
-    x: pad + (points.length - 1) * xStep,
-    y: yScale(last) - 10,
+    x: lastC.x,
+    y: lastC.y - 12,
     textAnchor: points.length > 3 ? "end" : "middle",
     fontSize: "11",
-    fill: "#0a1f1c",
-    fontWeight: "700"
+    style: {
+      fill: "var(--ink)"
+    },
+    fontWeight: "800"
   }, last, "kg")), projection && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 10,
@@ -1788,7 +1847,7 @@ function WeightChart({
       fontWeight: 700,
       textAlign: "center"
     }
-  }, "\uD83C\uDFAF ", projection));
+  }, "\\U0001F3AF ", projection));
 }
 function WeightStat({
   current,
