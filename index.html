@@ -212,48 +212,15 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px));}
 <script id="vita-tabbar-js">
 (function(){
   var ORDER=["Hoy","Historial","Plan","Recetas","Ejercicio","Coach"];
-  var IC={
-   "Hoy":'<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>',
-   "Historial":'<svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 4 8-9"/></svg>',
-   "Plan":'<svg viewBox="0 0 24 24"><path d="M6 3v7a2 2 0 0 0 4 0V3"/><path d="M8 11v10"/><path d="M17 3c-1.6 0-2.5 2-2.5 4.5S15.4 12 17 12v9"/></svg>',
-   "Recetas":'<svg viewBox="0 0 24 24"><path d="M5 4a1 1 0 0 1 1-1h13v18H6a1 1 0 0 0-1 1z"/><path d="M9 7h7M9 11h7"/></svg>',
-   "Ejercicio":'<svg viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>',
-   "Coach":'<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
-  };
+  var IC={"Hoy":'<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>',"Historial":'<svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 4 8-9"/></svg>',"Plan":'<svg viewBox="0 0 24 24"><path d="M6 3v7a2 2 0 0 0 4 0V3"/><path d="M8 11v10"/><path d="M17 3c-1.6 0-2.5 2-2.5 4.5S15.4 12 17 12v9"/></svg>',"Recetas":'<svg viewBox="0 0 24 24"><path d="M5 4a1 1 0 0 1 1-1h13v18H6a1 1 0 0 0-1 1z"/><path d="M9 7h7M9 11h7"/></svg>',"Ejercicio":'<svg viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>',"Coach":'<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'};
   var bar=null;
-  function btns(){
-    var m={};
-    var all=document.querySelectorAll('button');
-    for(var i=0;i<all.length;i++){var t=all[i].textContent.trim();
-      if(ORDER.indexOf(t)>=0 && !m[t]) m[t]=all[i];}
-    return m;
-  }
-  function active(b){ return b && b.querySelector('div')!=null; }
-  function tick(){
-    var m=btns();
-    var found=ORDER.filter(function(l){return m[l];}).length;
-    if(found<ORDER.length){ return; }
-    // ocultar fila de tabs original
-    if(m["Hoy"] && m["Hoy"].parentElement){ m["Hoy"].parentElement.style.display="none"; }
-    if(!bar){
-      bar=document.createElement("nav"); bar.id="vita-tabbar";
-      ORDER.forEach(function(l){
-        var it=document.createElement("button"); it.className="vtb"; it.setAttribute("data-l",l);
-        it.innerHTML=IC[l]+"<span>"+l+"</span>";
-        it.addEventListener("click",function(){ var mm=btns(); if(mm[l]){ mm[l].click(); setTimeout(tick,50);} });
-        bar.appendChild(it);
-      });
-      document.body.appendChild(bar);
-    }
-    // refrescar activo
-    for(var i=0;i<bar.children.length;i++){
-      var it=bar.children[i], l=it.getAttribute("data-l");
-      if(active(m[l])) it.classList.add("active"); else it.classList.remove("active");
-    }
-  }
-  var iv=setInterval(tick,400);
-  if(document.readyState!=="loading") tick();
-  else document.addEventListener("DOMContentLoaded",tick);
+  function btns(){var m={},all=document.querySelectorAll('button');for(var i=0;i<all.length;i++){var t=all[i].textContent.trim();if(ORDER.indexOf(t)>=0&&!m[t])m[t]=all[i];}return m;}
+  function active(b){return b&&b.querySelector('div')!=null;}
+  function tick(){var m=btns();if(ORDER.filter(function(l){return m[l];}).length<ORDER.length)return;
+    var row=m["Hoy"]&&m["Hoy"].parentElement;if(row&&row.style.display!=="none")row.style.display="none";
+    if(!bar){bar=document.createElement("nav");bar.id="vita-tabbar";ORDER.forEach(function(l){var it=document.createElement("button");it.className="vtb";it.setAttribute("data-l",l);it.innerHTML=IC[l]+"<span>"+l+"</span>";it.addEventListener("click",function(){var mm=btns();if(mm[l]){mm[l].click();setTimeout(tick,50);}});bar.appendChild(it);});document.body.appendChild(bar);}
+    for(var i=0;i<bar.children.length;i++){var it=bar.children[i],l=it.getAttribute("data-l"),want=active(m[l]);if(it.classList.contains("active")!==want)it.classList.toggle("active",want);}}
+  setInterval(tick,500);if(document.readyState!=="loading")tick();else document.addEventListener("DOMContentLoaded",tick);
 })();
 </script>
 
@@ -268,33 +235,26 @@ button:active{transform:scale(.97);}
 <script id="vita-rings-js">
 (function(){
   function num(re,t,d){var m=t.match(re);return m?parseFloat(m[1]):d;}
-  function ring(color,frac,big,small,lbl){
-    frac=Math.max(0,Math.min(1,frac||0));var off=(163.36*(1-frac)).toFixed(1);
-    return '<div class="vrg"><svg viewBox="0 0 64 64">'+
-     '<circle cx="32" cy="32" r="26" fill="none" stroke="var(--line)" stroke-width="7"/>'+
-     '<circle cx="32" cy="32" r="26" fill="none" stroke="'+color+'" stroke-width="7" stroke-linecap="round" stroke-dasharray="163.36" stroke-dashoffset="'+off+'" transform="rotate(-90 32 32)"/>'+
-     '<text x="32" y="31" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">'+big+'</text>'+
-     '<text x="32" y="42" text-anchor="middle" font-size="7.5" fill="var(--ink-mute)">'+small+'</text></svg>'+
-     '<div class="vlbl">'+lbl+'</div></div>';
-  }
+  function ring(color,frac,big,small,lbl){frac=Math.max(0,Math.min(1,frac||0));var off=(163.36*(1-frac)).toFixed(1);
+    return '<div class="vrg"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="var(--line)" stroke-width="7"/><circle cx="32" cy="32" r="26" fill="none" stroke="'+color+'" stroke-width="7" stroke-linecap="round" stroke-dasharray="163.36" stroke-dashoffset="'+off+'" transform="rotate(-90 32 32)"/><text x="32" y="31" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">'+big+'</text><text x="32" y="42" text-anchor="middle" font-size="7.5" fill="var(--ink-mute)">'+small+'</text></svg><div class="vlbl">'+lbl+'</div></div>';}
+  var lastSig="";
   function tick(){
     var f=document.querySelector('.fade');
-    if(!f||!/Peso actual/i.test(f.innerText)){var e=document.getElementById('vita-rings');if(e)e.remove();return;}
+    if(!f||!/Peso actual/i.test(f.innerText)){var e=document.getElementById('vita-rings');if(e)e.remove();lastSig="";return;}
     var t=f.innerText;
     var kc=num(/(\d+)\s*de\s*\d+/,t,0),kg=num(/\d+\s*de\s*(\d+)/,t,1);
     var ac=num(/([\d.]+)\s*litros/i,t,0),am=num(/Meta:\s*([\d.]+)\s*L/i,t,1);
     var pa=num(/actual\s*([\d.]+)\s*kg/i,t,0),pm=num(/Meta\s*([\d.]+)\s*kg/i,t,0),pi=num(/Inicio:\s*([\d.]+)\s*kg/i,t,pa);
+    var sig=kc+'|'+kg+'|'+ac+'|'+am+'|'+pa+'|'+pm+'|'+pi;
+    var ex=document.getElementById('vita-rings');
+    if(sig===lastSig&&ex)return;
+    lastSig=sig;
     var pf=(pi===pm)?0:(pi-pa)/(pi-pm);
-    var html='<div id="vita-rings">'+ring('#1D9E75',kg?kc/kg:0,kc,'kcal','Calorías')+
-      ring('#378ADD',am?ac/am:0,ac.toFixed(1),'L','Agua')+ring('#0e7490',pf,pa,'kg','Peso')+'</div>';
-    var e=document.getElementById('vita-rings');
-    if(!e){f.insertAdjacentHTML('afterbegin',html);}else{e.outerHTML=html;}
+    var html='<div id="vita-rings">'+ring('#1D9E75',kg?kc/kg:0,kc,'kcal','Calorías')+ring('#378ADD',am?ac/am:0,ac.toFixed(1),'L','Agua')+ring('#0e7490',pf,pa,'kg','Peso')+'</div>';
+    if(!ex){f.insertAdjacentHTML('afterbegin',html);}else{ex.outerHTML=html;}
   }
-  setInterval(tick,500);
-  document.addEventListener('click',function(ev){
-    var b=ev.target.closest&&ev.target.closest('button');
-    if(b&&/^(Vaso|Taza|Botella)$/.test(b.textContent.trim().split(/\s/)[0])&&navigator.vibrate){navigator.vibrate(10);}
-  },true);
+  setInterval(tick,600);
+  document.addEventListener('click',function(ev){var b=ev.target.closest&&ev.target.closest('button');if(b&&/^(Vaso|Taza|Botella)$/.test(b.textContent.trim().split(/\s/)[0])&&navigator.vibrate){navigator.vibrate(10);}},true);
   if(document.readyState!=='loading')tick();else document.addEventListener('DOMContentLoaded',tick);
 })();
 </script>
