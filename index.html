@@ -196,8 +196,7 @@ html[data-theme="light"]{--ink-soft:#2f4a45;--ink-mute:#566b67;}
 <script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/sw.js").catch(function(){});});}</script>
 <style id="vita-tabbar-css">
 #vita-tabbar{position:fixed;left:0;right:0;bottom:0;z-index:9000;display:flex;
- background:rgba(255,255,255,.92);-webkit-backdrop-filter:blur(20px) saturate(180%);
- backdrop-filter:blur(20px) saturate(180%);border-top:1px solid var(--line);
+ background:var(--bg-elev);border-top:1px solid var(--line);
  padding-bottom:env(safe-area-inset-bottom,0px);}
 #vita-tabbar .vtb{flex:1;border:0;background:transparent;display:flex;flex-direction:column;
  align-items:center;gap:3px;padding:7px 0 6px;color:var(--ink-mute);
@@ -240,8 +239,8 @@ button:active{transform:scale(.97);}
   var lastSig="";
   function tick(){
     var f=document.querySelector('.fade');
-    if(!f||!/Peso actual/i.test(f.innerText)){var e=document.getElementById('vita-rings');if(e)e.remove();lastSig="";return;}
-    var t=f.innerText;
+    if(!f||!/Peso actual/i.test(f.textContent)){var e=document.getElementById('vita-rings');if(e)e.remove();lastSig="";return;}
+    var t=f.textContent;
     var kc=num(/(\d+)\s*de\s*\d+/,t,0),kg=num(/\d+\s*de\s*(\d+)/,t,1);
     var ac=num(/([\d.]+)\s*litros/i,t,0),am=num(/Meta:\s*([\d.]+)\s*L/i,t,1);
     var pa=num(/actual\s*([\d.]+)\s*kg/i,t,0),pm=num(/Meta\s*([\d.]+)\s*kg/i,t,0),pi=num(/Inicio:\s*([\d.]+)\s*kg/i,t,pa);
