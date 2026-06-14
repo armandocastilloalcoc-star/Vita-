@@ -257,5 +257,47 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px));}
 })();
 </script>
 
+<style id="vita-rings-css">
+#vita-rings{display:flex;justify-content:space-around;gap:8px;margin:2px 0 16px;}
+#vita-rings .vrg{flex:1;text-align:center;}
+#vita-rings .vrg svg{width:84px;height:84px;}
+#vita-rings .vrg .vlbl{margin-top:2px;font:500 12px Inter,system-ui,sans-serif;color:var(--ink-mute);}
+button{transition:transform .12s ease, opacity .12s ease;}
+button:active{transform:scale(.97);}
+</style>
+<script id="vita-rings-js">
+(function(){
+  function num(re,t,d){var m=t.match(re);return m?parseFloat(m[1]):d;}
+  function ring(color,frac,big,small,lbl){
+    frac=Math.max(0,Math.min(1,frac||0));var off=(163.36*(1-frac)).toFixed(1);
+    return '<div class="vrg"><svg viewBox="0 0 64 64">'+
+     '<circle cx="32" cy="32" r="26" fill="none" stroke="var(--line)" stroke-width="7"/>'+
+     '<circle cx="32" cy="32" r="26" fill="none" stroke="'+color+'" stroke-width="7" stroke-linecap="round" stroke-dasharray="163.36" stroke-dashoffset="'+off+'" transform="rotate(-90 32 32)"/>'+
+     '<text x="32" y="31" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">'+big+'</text>'+
+     '<text x="32" y="42" text-anchor="middle" font-size="7.5" fill="var(--ink-mute)">'+small+'</text></svg>'+
+     '<div class="vlbl">'+lbl+'</div></div>';
+  }
+  function tick(){
+    var f=document.querySelector('.fade');
+    if(!f||!/Peso actual/i.test(f.innerText)){var e=document.getElementById('vita-rings');if(e)e.remove();return;}
+    var t=f.innerText;
+    var kc=num(/(\d+)\s*de\s*\d+/,t,0),kg=num(/\d+\s*de\s*(\d+)/,t,1);
+    var ac=num(/([\d.]+)\s*litros/i,t,0),am=num(/Meta:\s*([\d.]+)\s*L/i,t,1);
+    var pa=num(/actual\s*([\d.]+)\s*kg/i,t,0),pm=num(/Meta\s*([\d.]+)\s*kg/i,t,0),pi=num(/Inicio:\s*([\d.]+)\s*kg/i,t,pa);
+    var pf=(pi===pm)?0:(pi-pa)/(pi-pm);
+    var html='<div id="vita-rings">'+ring('#1D9E75',kg?kc/kg:0,kc,'kcal','Calorías')+
+      ring('#378ADD',am?ac/am:0,ac.toFixed(1),'L','Agua')+ring('#0e7490',pf,pa,'kg','Peso')+'</div>';
+    var e=document.getElementById('vita-rings');
+    if(!e){f.insertAdjacentHTML('afterbegin',html);}else{e.outerHTML=html;}
+  }
+  setInterval(tick,500);
+  document.addEventListener('click',function(ev){
+    var b=ev.target.closest&&ev.target.closest('button');
+    if(b&&/^(Vaso|Taza|Botella)$/.test(b.textContent.trim().split(/\s/)[0])&&navigator.vibrate){navigator.vibrate(10);}
+  },true);
+  if(document.readyState!=='loading')tick();else document.addEventListener('DOMContentLoaded',tick);
+})();
+</script>
+
 </body>
 </html>

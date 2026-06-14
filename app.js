@@ -1614,14 +1614,14 @@ function WeightChart({
         letterSpacing: 0.5,
         textTransform: "uppercase"
       }
-    }, "Sin historial todav\xEDa"), /*#__PURE__*/React.createElement("div", {
+    }, "Tu historia empieza hoy"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
         color: "var(--ink-mute)",
         marginTop: 6,
         lineHeight: 1.5
       }
-    }, "Actualiza tu peso varios d\xEDas para ver tu progreso"));
+    }, "Registra tu peso hoy y ver\xE1s tu progreso tomar forma."));
   }
   const points = history.slice(-12).filter(p => p && typeof p.weight === "number" && !isNaN(p.weight));
   if (points.length < 2) {
@@ -1638,14 +1638,14 @@ function WeightChart({
         letterSpacing: 0.5,
         textTransform: "uppercase"
       }
-    }, "Sin historial todav\xEDa"), /*#__PURE__*/React.createElement("div", {
+    }, "Tu historia empieza hoy"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
         color: "var(--ink-mute)",
         marginTop: 6,
         lineHeight: 1.5
       }
-    }, "Actualiza tu peso varios d\xEDas para ver tu progreso"));
+    }, "Registra tu peso hoy y ver\xE1s tu progreso tomar forma."));
   }
   const weights = points.map(p => Number(p.weight));
   const safeGoal = Number(goal) || 70;
@@ -5906,7 +5906,7 @@ Genera el reporte semanal según las instrucciones.`;
       color: "var(--ink)",
       lineHeight: 1
     }
-  }, "Hola, ", /*#__PURE__*/React.createElement("em", null, profile.name)), /*#__PURE__*/React.createElement("div", {
+  }, "Hola, ", /*#__PURE__*/React.createElement("em", null, (profile.name||"").split(" ")[0])), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: "var(--ink-mute)",
