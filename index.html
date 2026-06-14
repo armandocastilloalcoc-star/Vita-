@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="Vita"/>
 <meta name="application-name" content="Vita"/>
-<meta name="theme-color" content="#fafdfc"/>
+<meta name="theme-color" content="#0e7490"/>
 <link rel="manifest" href="/manifest.webmanifest"/>
 <meta name="format-detection" content="telephone=no"/>
 <title>Vita</title>
@@ -164,11 +164,15 @@ a, button, [role="button"], input, select, textarea { scroll-margin-top:80px; }
     scroll-behavior:auto !important;
   }
 }
+
+/* === Mejora visual v2 (segura, no toca logica) === */
+html[data-theme="light"]{--ink-soft:#2f4a45;--ink-mute:#566b67;}
+.vc-fab{bottom:88px!important;right:14px!important;padding:8px 13px!important;font-size:12px!important;}
 </style>
 <script>
 (function(){
   var KEY="vita_theme";
-  function meta(t){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="dark"?"#0a1310":"#fafdfc");}
+  function meta(t){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="dark"?"#0a1310":"#0e7490");}
   function apply(t){document.documentElement.setAttribute("data-theme",t);meta(t);}
   var saved=null;try{saved=localStorage.getItem(KEY);}catch(e){}
   var sysDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;
