@@ -194,5 +194,68 @@ html[data-theme="light"]{--ink-soft:#2f4a45;--ink-mute:#566b67;}
 <div id="root"></div>
 <script src="/app.js"></script>
 <script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/sw.js").catch(function(){});});}</script>
+<style id="vita-tabbar-css">
+#vita-tabbar{position:fixed;left:0;right:0;bottom:0;z-index:9000;display:flex;
+ background:rgba(255,255,255,.92);-webkit-backdrop-filter:blur(20px) saturate(180%);
+ backdrop-filter:blur(20px) saturate(180%);border-top:1px solid var(--line);
+ padding-bottom:env(safe-area-inset-bottom,0px);}
+#vita-tabbar .vtb{flex:1;border:0;background:transparent;display:flex;flex-direction:column;
+ align-items:center;gap:3px;padding:7px 0 6px;color:var(--ink-mute);
+ font:500 10px Inter,system-ui,sans-serif;cursor:pointer;letter-spacing:-0.1px;}
+#vita-tabbar .vtb svg{width:23px;height:23px;stroke:currentColor;fill:none;
+ stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
+#vita-tabbar .vtb.active{color:var(--primary-deep);font-weight:600;}
+#vita-tabbar .vtb.active svg{stroke-width:2.2;}
+html[data-theme="dark"] #vita-tabbar{background:rgba(18,28,25,.9);}
+body{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px));}
+</style>
+<script id="vita-tabbar-js">
+(function(){
+  var ORDER=["Hoy","Historial","Plan","Recetas","Ejercicio","Coach"];
+  var IC={
+   "Hoy":'<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>',
+   "Historial":'<svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 4 8-9"/></svg>',
+   "Plan":'<svg viewBox="0 0 24 24"><path d="M6 3v7a2 2 0 0 0 4 0V3"/><path d="M8 11v10"/><path d="M17 3c-1.6 0-2.5 2-2.5 4.5S15.4 12 17 12v9"/></svg>',
+   "Recetas":'<svg viewBox="0 0 24 24"><path d="M5 4a1 1 0 0 1 1-1h13v18H6a1 1 0 0 0-1 1z"/><path d="M9 7h7M9 11h7"/></svg>',
+   "Ejercicio":'<svg viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>',
+   "Coach":'<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+  };
+  var bar=null;
+  function btns(){
+    var m={};
+    var all=document.querySelectorAll('button');
+    for(var i=0;i<all.length;i++){var t=all[i].textContent.trim();
+      if(ORDER.indexOf(t)>=0 && !m[t]) m[t]=all[i];}
+    return m;
+  }
+  function active(b){ return b && b.querySelector('div')!=null; }
+  function tick(){
+    var m=btns();
+    var found=ORDER.filter(function(l){return m[l];}).length;
+    if(found<ORDER.length){ return; }
+    // ocultar fila de tabs original
+    if(m["Hoy"] && m["Hoy"].parentElement){ m["Hoy"].parentElement.style.display="none"; }
+    if(!bar){
+      bar=document.createElement("nav"); bar.id="vita-tabbar";
+      ORDER.forEach(function(l){
+        var it=document.createElement("button"); it.className="vtb"; it.setAttribute("data-l",l);
+        it.innerHTML=IC[l]+"<span>"+l+"</span>";
+        it.addEventListener("click",function(){ var mm=btns(); if(mm[l]){ mm[l].click(); setTimeout(tick,50);} });
+        bar.appendChild(it);
+      });
+      document.body.appendChild(bar);
+    }
+    // refrescar activo
+    for(var i=0;i<bar.children.length;i++){
+      var it=bar.children[i], l=it.getAttribute("data-l");
+      if(active(m[l])) it.classList.add("active"); else it.classList.remove("active");
+    }
+  }
+  var iv=setInterval(tick,400);
+  if(document.readyState!=="loading") tick();
+  else document.addEventListener("DOMContentLoaded",tick);
+})();
+</script>
+
 </body>
 </html>
