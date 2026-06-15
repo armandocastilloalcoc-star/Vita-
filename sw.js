@@ -1,6 +1,6 @@
 /* Vita service worker v2 — red primero para el código (siempre lo último),
    caché solo como respaldo offline. Nunca toca /api ni /mcp. */
-const VERSION = "vita-v4";
+const VERSION = "vita-v5";
 const PRECACHE = [
   "/", "/index.html", "/app.js", "/vita-cloud.js",
   "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png",
